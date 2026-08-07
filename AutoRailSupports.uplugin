@@ -2,14 +2,14 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0.0",
-	"FriendlyName": "AutoRailSupports",
-	"Description": "",
+	"FriendlyName": "Auto Rail Supports",
+	"Description": "Automatically stamps your saved in-game blueprints beneath train rails as you build them.",
 	"Category": "Modding",
 	"CreatedBy": "ALX",
-	"CreatedByURL": "",
+	"CreatedByURL": "https://ficsit.app/user/C5JRiqVFJP8UmN",
 	"DocsURL": "",
 	"MarketplaceURL": "",
-	"SupportURL": "",
+	"SupportURL": "https://github.com/itsalxx-sudo/AutoRailSupports/issues",
 	"CanContainContent": true,
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
@@ -27,6 +27,11 @@
 			"Name": "SML",
 			"Enabled": true,
 			"SemVersion": "^3.12.0"
+		},
+		{
+			"Name": "AbstractInstance",
+			"Enabled": true,
+			"BasePlugin": true
 		}
 	],
 	"SemVersion": "1.0.0",

@@ -72,3 +72,23 @@ Plugins/*/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Additions beyond the Alpakit template
+
+.vscode/
+.idea/
+*.iml
+*.user
+*.userprefs
+*.code-workspace
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.pdb
+
+*.zip
+
+Engine/
+ThirdParty/

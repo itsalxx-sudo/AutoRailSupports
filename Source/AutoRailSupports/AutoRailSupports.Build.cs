@@ -24,7 +24,7 @@ public class AutoRailSupports : ModuleRules
 			"GeometryCollectionEngine",
 			//"ChaosVehiclesCore", "ChaosVehicles", "ChaosSolverEngine",
 			"AnimGraphRuntime",
-			//"AkAudio",
+			"AkAudio",
 			"AssetRegistry",
 			"NavigationSystem",
 			//"ReplicationGraph",
@@ -41,14 +41,21 @@ public class AutoRailSupports : ModuleRules
 			//"TemplateSequence",
 			"NetCore",
 			"GameplayTags",
+			"CoreOnline",
 			"Json", "JsonUtilities"
 		});
 
 		// FactoryGame plugins
 		PublicDependencyModuleNames.AddRange(new string[] {
-			//"AbstractInstance",
+			"AbstractInstance",
 			//"InstancedSplinesComponent",
 			//"SignificanceISPC"
+		});
+
+		// Config UI + runtime keybinds
+		PublicDependencyModuleNames.AddRange(new string[] {
+			"EnhancedInput",
+			"Json", "JsonUtilities"
 		});
 
 		// Header stubs
