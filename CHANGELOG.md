@@ -15,7 +15,7 @@ Initial release.
   without opening a menu or losing the hologram.
 - Configuration menu (`U`) with all the mods possible adjustments.
 - Global JSON presets, saved to `FactoryGame/Configs/AutoRailSupports.json`.
-- Most keybinds rebindable through Options -> Keybindings.
+- Rebindable keybinds through Options -> Keybindings.
 - Mod options under Main Menu -> Mods -> Auto Rail Supports: adjustable Ctrl/Alt/Shift step sizes for
   position and rotation, and a background opacity slider for the in-world adjustments info panel.
 
