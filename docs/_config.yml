@@ -1,0 +1,24 @@
+title: Auto Rail Supports
+description: Automatically stamps your saved in-game blueprints beneath train rails as you build them.
+url: https://itsalxx-sudo.github.io
+baseurl: /AutoRailSupports
+
+remote_theme: just-the-docs/just-the-docs
+
+nav_sort: case_insensitive
+search_enabled: true
+
+aux_links:
+  "Download on SMR":
+    - "https://ficsit.app/mod/AutoRailSupports"
+  "GitHub":
+    - "https://github.com/itsalxx-sudo/AutoRailSupports"
+aux_links_new_tab: true
+
+footer_content: >-
+  Auto Rail Supports by ALX &mdash; licensed under
+  <a href="https://github.com/itsalxx-sudo/AutoRailSupports/blob/main/LICENSE">GPL-3.0</a>.
+  Satisfactory is a trademark of Coffee Stain Studios. This is an unofficial fan-made mod.
+
+exclude:
+  - CONTRIBUTING.md
