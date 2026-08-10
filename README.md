@@ -2,16 +2,13 @@
 
 Automatically stamps your saved in-game blueprints beneath train rails as you build them.
 
-> Auto Rail Supports is created by **ALX**.
-> The only official download is the [Satisfactory Mod Repository](https://ficsit.app/mod/AutoRailSupports).
-> Source: <https://github.com/itsalxx-sudo/AutoRailSupports>
+[![Download](https://img.shields.io/badge/Download-Mod-yellow)](https://ficsit.app/mod/ExNu9UL5ArXXk5) [![Trailer](https://img.shields.io/badge/Watch-Trailer-yellow)](https://youtu.be/pkFexaEA-Pg) [![Docs](https://img.shields.io/badge/Docs-Settings-yellow)](https://itsalxx-sudo.github.io/AutoRailSupports/) [![SML](https://img.shields.io/badge/SML-3.12.0+-yellow)](https://ficsit.app/mod/SML) [![Contribution](https://img.shields.io/badge/Contributions-Welcome-yellow)](CONTRIBUTING.md) [![Issues](https://img.shields.io/github/issues/itsalxx-sudo/AutoRailSupports)](https://github.com/itsalxx-sudo/AutoRailSupports/issues) [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE) [![AI_Disclosure](https://img.shields.io/badge/AI-Disclosure-green)](AI_DISCLOSURE.md)
 
 ## Installation
 
-Install through the **[Satisfactory Mod Manager](https://ficsit.app/)** - Search for
-*Auto Rail Supports* and click Install.
+Install through the **[Satisfactory Mod Manager](https://ficsit.app/)**
 
-Manual installation is not supported.
+Search for *Auto Rail Supports* and click Install.
 
 **Requires:** SML `3.12.0` or newer.
 
@@ -24,6 +21,10 @@ Manual installation is not supported.
 
 To add supports to existing rails: aim at the track with the dismantle gun and press `K` to enter ARS Adjustments, then click `LMB`.
 
+## Docs & Settings
+
+See [Docs & Settings](https://itsalxx-sudo.github.io/AutoRailSupports/).
+
 ## Reporting Bugs
 
 Please open an issue on the
@@ -32,6 +33,10 @@ Please open an issue on the
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## AI Disclosure
+
+See [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
 
 ## License
 
