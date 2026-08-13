@@ -12,10 +12,9 @@ Automatically stamps your saved in-game blueprints beneath train rails as you bu
 
 ## What it does
 
-- **Automatic supports.** Any blueprint you've saved in-game, tiled along the track
+- **Automatic supports.** Tiled along the track
   spline, following curves and inclines.
-- **Up to four pillar slots.** Each places a different blueprint every *N* segments, with its own
-  spacing offset.
+- **Up to four pillar slots.** Each places a different blueprint every *N* segments.
 - **In-world ARS Adjustments.** Adjust supports in place with the keyboard and the hologram updates live.
 - **Apply to existing rails.** Apply supports to tracks you've already built.
 - **Presets.** Save a configuration as a named preset and reuse it.

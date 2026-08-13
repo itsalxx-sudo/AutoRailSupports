@@ -20,7 +20,7 @@ Install Auto Rail Supports through the **[Satisfactory Mod Manager](https://fics
 
 Auto Rail Supports must be installed by **both the host and every client**.
 
-## Dedicated servers
+## Dedicated Servers
 
 The mod builds for Windows and Linux dedicated servers as well as the game client. Install it on
 the server through the Mod Manager's server management.
