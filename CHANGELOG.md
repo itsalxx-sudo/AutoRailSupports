@@ -2,6 +2,11 @@
 
 All notable changes to Auto Rail Supports are documented here.
 
+## [1.0.1]
+- Fixed game crash on 1.2.4 dedicated servers running CL#491125 ARS build - Rebuilt for 1.2.4.
+
+[1.0.1]: https://github.com/itsalxx-sudo/AutoRailSupports/releases/tag/v1.0.1
+
 ## [1.0.0]
 
 Initial release.

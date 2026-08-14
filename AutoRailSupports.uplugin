@@ -1,8 +1,8 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0.0",
-	"SemVersion": "1.0.0",
+	"VersionName": "1.0.1",
+	"SemVersion": "1.0.1",
 	"FriendlyName": "Auto Rail Supports",
 	"Description": "Automatically stamps your saved in-game blueprints beneath train rails as you build them.",
 	"Category": "Modding",
@@ -35,5 +35,5 @@
 			"BasePlugin": true
 		}
 	],
-	"GameVersion": ">=491125"
+	"GameVersion": ">=502094"
 }
