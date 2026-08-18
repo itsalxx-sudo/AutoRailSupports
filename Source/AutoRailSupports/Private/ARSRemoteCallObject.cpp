@@ -3,6 +3,7 @@
 #include "ARSClientManager.h"
 #include "ARSConfigWidget.h"
 #include "ARSDebug.h"
+#include "ARSModConfigStruct.h"
 #include "ARSSubsystem.h"
 #include "FGBlueprintSubsystem.h"
 #include "FGChatManager.h"
@@ -41,7 +42,7 @@ void UARSRemoteCallObject::Server_SetEnabled_Implementation(bool bNewEnabled)
 		const FString UserId = GetSenderKey();
 		const bool bEnabled = Subsystem->SetEnabledSettingFor(UserId, bNewEnabled);
 		Client_Settings(Subsystem->GetSettingsFor(UserId));
-		Client_Notify(FString::Printf(TEXT("Auto Rail Supports is now %s."), bEnabled ? TEXT("ON") : TEXT("OFF")));
+		Client_Notify(FString::Printf(TEXT("Auto Rail Supports is now %s."), bEnabled ? TEXT("ON") : TEXT("OFF")), /*bConfirmation*/ true);
 	}
 }
 
@@ -75,7 +76,7 @@ void UARSRemoteCallObject::Server_ApplyAimedRail_Implementation(AFGBuildableRail
 		return;
 	}
 	Subsystem->ApplyToTrack(Track, Character);
-	Client_Notify(FString::Printf(TEXT("Auto Rail Supports: generating supports under the aimed rail segment (%.1f m)."), Track->GetLength() / 100.0f));
+	Client_Notify(FString::Printf(TEXT("Auto Rail Supports: generating supports under the aimed rail segment (%.1f m)."), Track->GetLength() / 100.0f), /*bConfirmation*/ true);
 }
 
 void UARSRemoteCallObject::Server_SetPreviewSource_Implementation(AActor* Source)
@@ -140,8 +141,12 @@ void UARSRemoteCallObject::Client_OpenUI_Implementation()
 	}
 }
 
-void UARSRemoteCallObject::Client_Notify_Implementation(const FString& Message)
+void UARSRemoteCallObject::Client_Notify_Implementation(const FString& Message, bool bConfirmation)
 {
+	if (bConfirmation && FARSModConfigStruct::GetActiveConfig(GetWorld()).bMuteChatConfirmations)
+	{
+		return;
+	}
 	if (AFGChatManager* ChatManager = AFGChatManager::Get(GetWorld()))
 	{
 		FChatMessageStruct ChatMessage;

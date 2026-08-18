@@ -171,6 +171,11 @@ Adjust how far one key press moves a support while you hold a modifier (in meter
 The ARS Adjustments info panel on the left has a transparent background by default. 
 Raise this to darken the background behind it. `0` is fully transparent, `1` is fully opaque.
 
+### Mute chat confirmations
+
+The mod prints a line in chat when you apply supports to an existing rail, and when
+you toggle it on or off with `I`. Toggle this to mute both.
+
 ---
 
 ## Chat Commands

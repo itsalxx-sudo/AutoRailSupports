@@ -598,7 +598,7 @@ void AARSSubsystem::SendPlayerChatMessage(AFGCharacterPlayer* Player, const FStr
 	{
 		if (UARSRemoteCallObject* RCO = PlayerController->GetRemoteCallObjectOfClass<UARSRemoteCallObject>())
 		{
-			RCO->Client_Notify(Message);
+			RCO->Client_Notify(Message, /*bConfirmation*/ false);
 		}
 	}
 }

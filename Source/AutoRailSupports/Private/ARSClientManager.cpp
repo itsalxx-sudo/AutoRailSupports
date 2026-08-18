@@ -679,7 +679,7 @@ void AARSClientManager::TriggerApplyAimedRail()
 	}
 	else
 	{
-		RCO->Client_Notify(TEXT("Auto Rail Supports: aim at a railway track and try again."));
+		RCO->Client_Notify(TEXT("Auto Rail Supports: aim at a railway track and try again."), /*bConfirmation*/ false);
 	}
 }
 

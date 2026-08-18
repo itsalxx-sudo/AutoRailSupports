@@ -35,6 +35,10 @@ public:
     UPROPERTY(BlueprintReadWrite)
     float InfoPanelBackgroundOpacity { 0.0f };
 
+    // mute chat confirmations, warnings and failures ignore this
+    UPROPERTY(BlueprintReadWrite)
+    bool bMuteChatConfirmations { false };
+
     static FARSModConfigStruct GetActiveConfig(UObject* WorldContext) {
         FARSModConfigStruct ConfigStruct{};
         FConfigId ConfigId{"AutoRailSupports", ""};
