@@ -1,5 +1,6 @@
 #include "ARSPreviewActor.h"
 
+#include "ARSCurve.h"
 #include "ARSDebug.h"
 #include "ARSSubsystem.h"
 #include "FGBlueprintSubsystem.h"
@@ -126,7 +127,8 @@ void AARSPreviewActor::UpdateFromTrack(AFGBuildableRailroadTrack* Track, const F
 	RebuildFromSpline(Spline, SettingsData, static_cast<uint8>(EOutlineColor::OC_HOLOGRAM), bCollectAnchors);
 }
 
-bool AARSPreviewActor::GetClosestStampTransform(int32 PartIndex, const FVector& From, FTransform& OutTransform) const
+bool AARSPreviewActor::GetClosestStampTransform(int32 PartIndex, const FVector& From, FTransform& OutTransform,
+                                                bool* OutPartnerSide) const
 {
 	float BestDistSq = TNumericLimits<float>::Max();
 	bool bFound = false;
@@ -141,6 +143,10 @@ bool AARSPreviewActor::GetClosestStampTransform(int32 PartIndex, const FVector& 
 		{
 			BestDistSq = DistSq;
 			OutTransform = Anchor.Transform;
+			if (OutPartnerSide)
+			{
+				*OutPartnerSide = Anchor.bPartnerSide;
+			}
 			bFound = true;
 		}
 	}
@@ -183,13 +189,23 @@ void AARSPreviewActor::RebuildFromSpline(USplineComponent* Spline, const FARSSet
 	}
 
 	TArray<FARSStampJob> Jobs;
-	FARSGenerator::PlanPath(
-		[Spline](float Distance, FVector& OutLocation, FVector& OutDirection)
+	const FARSPathCurve SourceCurve = FARSGenerator::MakeSplineCurve(Spline);
+	if (Settings.bDoubleRails)
+	{
+		TArray<FARSCurvePoint> Points;
+		TArray<FARSCurvePoint> Offset;
+		FARSCurve::ReadPoints(Spline, Points);
+		FARSCurve::OffsetPoints(Points, Settings.TrackSeparation, Offset);
+		if (USplineComponent* MirrorSpline = FARSCurve::MakeScratchSpline(Offset))
 		{
-			OutLocation = Spline->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-			OutDirection = Spline->GetDirectionAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-		},
-		TotalLength, Settings, nullptr, 0, Jobs);
+			FARSGenerator::PlanDoublePath(SourceCurve, FARSGenerator::MakeSplineCurve(MirrorSpline),
+				Settings, nullptr, 0, Jobs);
+		}
+	}
+	else
+	{
+		FARSGenerator::PlanPath(SourceCurve.Sampler, TotalLength, Settings, nullptr, 0, Jobs);
+	}
 
 	mPlannedCost.Reset();
 	TMap<TWeakObjectPtr<UFGBlueprintDescriptor>, TArray<FItemAmount>> CostByDescriptor;
@@ -219,7 +235,7 @@ void AARSPreviewActor::RebuildFromSpline(USplineComponent* Spline, const FARSSet
 				{
 					Anchor.SetLocation(Job.Transform.TransformPosition(Job.LocalBounds.GetCenter()));
 				}
-				mStampAnchors.Add({ Job.PartIndex, Anchor });
+				mStampAnchors.Add({ Job.PartIndex, Job.bPartnerSide, Anchor });
 			}
 
 			const AARSSubsystem::FARSMeasuredBlueprint& Measured = Subsystem->GetMeasuredBlueprint(Descriptor);

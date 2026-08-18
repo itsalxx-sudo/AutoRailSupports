@@ -1,6 +1,8 @@
 #include "ARSGenerator.h"
 
+#include "ARSCurve.h"
 #include "ARSDebug.h"
+#include "Components/SplineComponent.h"
 #include "FGBlueprintProxy.h"
 #include "FGBlueprintSubsystem.h"
 #include "FGCentralStorageSubsystem.h"
@@ -54,6 +56,198 @@ namespace
 			return true;
 		}
 		return false;
+	}
+
+	//STATION GEOMETRY
+	// shared by the single and double rail paths
+	struct FARSStationBasis
+	{
+		FVector Location = FVector::ZeroVector;
+		FVector Direction = FVector::ForwardVector;
+		FVector FlatDirection = FVector::ForwardVector;
+		FVector RightDirection = FVector::RightVector;
+		FQuat SplineRotation = FQuat::Identity;
+	};
+
+	FARSStationBasis MakeBasis(const FVector& Location, const FVector& RawDirection)
+	{
+		FARSStationBasis Basis;
+		Basis.Location = Location;
+		const FVector Direction = RawDirection.GetSafeNormal();
+		Basis.Direction = Direction.IsNearlyZero() ? FVector::ForwardVector : Direction;
+		Basis.FlatDirection = FVector(Basis.Direction.X, Basis.Direction.Y, 0.0f).GetSafeNormal();
+		if (Basis.FlatDirection.IsNearlyZero())
+		{
+			Basis.FlatDirection = FVector::ForwardVector;
+		}
+		Basis.RightDirection = FVector::CrossProduct(FVector::UpVector, Basis.FlatDirection);
+		Basis.SplineRotation = FRotationMatrix::MakeFromXZ(Basis.Direction, FVector::UpVector).ToQuat(); // X along track, Z near world-up
+		return Basis;
+	}
+
+	FARSStationBasis SampleBasis(const FARSPathSampler& Sampler, float Distance)
+	{
+		FVector Location = FVector::ZeroVector;
+		FVector Direction = FVector::ForwardVector;
+		Sampler(Distance, Location, Direction);
+		return MakeBasis(Location, Direction);
+	}
+
+	// shift up by the content's top height so the top face lands below the rail
+	FVector PivotedLocation(const FVector& InLocation, const FQuat& Heading, const FQuat& Rotation, const FBox& LocalBounds)
+	{
+		if (!LocalBounds.IsValid)
+		{
+			return InLocation;
+		}
+		const FVector Center = LocalBounds.GetCenter();
+		const FVector Drop(0.0f, 0.0f, Center.Z - LocalBounds.Max.Z);
+		return InLocation + Heading.RotateVector(Drop) - Rotation.RotateVector(Center);
+	}
+
+	bool SlotStampsAt(const FARSPillarSlot& Slot, int32 Index)
+	{
+		return Index >= Slot.SpacingOffset && ((Index - Slot.SpacingOffset) % Slot.EveryN) == 0;
+	}
+
+	// stations sit at tile centers
+	struct FARSStationPlan
+	{
+		int32 Count = 0;
+		float Step = 0.0f;
+		float Remainder = 0.0f;
+		float TotalLength = 0.0f;
+		bool bTrailingTileOverhangs = false;
+
+		float DistanceAt(int32 Index) const { return (Index + 0.5f) * Step; }
+	};
+
+	FARSStationPlan PlanStations(float TotalLength, float Step)
+	{
+		FARSStationPlan Plan;
+		Plan.TotalLength = TotalLength;
+		Plan.Step = Step;
+		const int32 FullTileCount = FMath::FloorToInt(TotalLength / Step);
+		Plan.Remainder = TotalLength - FullTileCount * Step;
+		Plan.bTrailingTileOverhangs = Plan.Remainder > 0.5f * Step;
+		Plan.Count = FMath::Min(Plan.bTrailingTileOverhangs ? FullTileCount + 1 : FullTileCount, MaxStampsPerChain);
+		return Plan;
+	}
+
+	bool WantsEndGapStamp(const FARSStationPlan& Plan, const FARSSettings& Settings, bool bCoverEndGap)
+	{
+		return bCoverEndGap && Settings.UnderRailDescriptor
+			&& !Plan.bTrailingTileOverhangs && Plan.Remainder > 1.0f && Plan.Count < MaxStampsPerChain;
+	}
+
+	struct FARSStampParams
+	{
+		UFGBlueprintDescriptor* Descriptor = nullptr;
+		FBox LocalBounds = FBox(ForceInit);
+		int32 PartIndex = 0;
+		FRotator RotationOffset = FRotator::ZeroRotator;
+		float ZOffset = 0.0f;
+		float SideOffset = 0.0f;
+		float ForwardOffset = 0.0f;
+		bool bAlignToRail = true;
+		bool bMirrored = false;
+		float OutwardSign = 1.0f;
+		float RollDegrees = 0.0f;
+		bool bPartnerSide = false;
+	};
+
+	void EmitStamp(const FARSStationBasis& Basis, const FARSStampParams& Params, const FARSSettings& Settings,
+	               AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs)
+	{
+		const FQuat LevelHeading = Params.bAlignToRail
+			? Basis.SplineRotation
+			: FRotator(0.0f, Basis.FlatDirection.Rotation().Yaw, 0.0f).Quaternion();
+		const FQuat Heading = FMath::IsNearlyZero(Params.RollDegrees)
+			? LevelHeading
+			: LevelHeading * FRotator(0.0f, 0.0f, Params.RollDegrees).Quaternion();
+		const FQuat Mirror = Params.bMirrored ? FRotator(0.0f, 180.0f, 0.0f).Quaternion() : FQuat::Identity;
+		const FQuat Rotation = Heading * Params.RotationOffset.Quaternion() * Mirror;
+		const FVector StampLocation = Basis.Location
+			+ FVector(0.0f, 0.0f, Params.ZOffset)
+			+ Basis.RightDirection * Params.SideOffset * Params.OutwardSign
+			+ Basis.Direction * Params.ForwardOffset;
+
+		FARSStampJob& Job = OutJobs.AddDefaulted_GetRef();
+		Job.Descriptor = Params.Descriptor;
+		Job.Transform = FTransform(Rotation, PivotedLocation(StampLocation, Heading, Rotation, Params.LocalBounds));
+		Job.PartIndex = Params.PartIndex;
+		Job.bPartnerSide = Params.bPartnerSide;
+		Job.LocalBounds = Params.LocalBounds;
+		Job.Payer = Payer;
+		Job.BatchId = BatchId;
+		Job.bCombineIntoOneBlueprint = Settings.bCombineIntoOneBlueprint;
+	}
+
+	struct FARSUnderRailValues
+	{
+		FARSStampParams Params;
+		float Step = 800.0f;
+		bool bCoverEndGap = false;
+	};
+
+	FARSUnderRailValues UnderRailValuesFor(const FARSSettings& Settings, bool bPartner)
+	{
+		FARSUnderRailValues Values;
+		Values.Params.Descriptor = Settings.UnderRailDescriptor;
+		Values.Params.LocalBounds = Settings.UnderRailLocalBounds;
+		Values.Params.bPartnerSide = bPartner;
+
+		if (bPartner && Settings.bSplitUnderRailSides)
+		{
+			const FARSUnderRailSide& Side = Settings.PartnerUnderRail;
+			Values.Params.RotationOffset = Side.RotationOffset;
+			Values.Params.ZOffset = Side.ZOffset;
+			Values.Params.SideOffset = Side.SideOffset;
+			Values.Params.ForwardOffset = Side.ForwardOffset;
+			Values.Step = FMath::Max(Side.Length, 50.0f);
+			Values.bCoverEndGap = Side.bCoverEndGap;
+			return Values;
+		}
+		Values.Params.RotationOffset = Settings.UnderRailRotationOffset;
+		Values.Params.ZOffset = Settings.UnderRailZOffset;
+		Values.Params.SideOffset = Settings.UnderRailSideOffset;
+		Values.Params.ForwardOffset = Settings.UnderRailForwardOffset;
+		Values.Step = FMath::Max(Settings.UnderRailLength, 50.0f);
+		Values.bCoverEndGap = Settings.bCoverEndGap;
+		return Values;
+	}
+
+	FARSStampParams PillarParams(const FARSPillarSlot& Slot)
+	{
+		FARSStampParams Params;
+		Params.Descriptor = Slot.Descriptor;
+		Params.LocalBounds = Slot.LocalBounds;
+		Params.PartIndex = Slot.Priority + 1;
+		Params.RotationOffset = Slot.RotationOffset;
+		Params.ZOffset = Slot.ZOffset;
+		Params.SideOffset = Slot.SideOffset;
+		Params.ForwardOffset = Slot.ForwardOffset;
+		Params.bAlignToRail = Slot.bAlignToRail;
+		return Params;
+	}
+
+	// the highest-priority slot always stamps, lower ones only with prevention off
+	int32 TopFiringPriority(const FARSSettings& Settings, int32 Index)
+	{
+		int32 TopPriority = -1;
+		for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
+		{
+			if (SlotStampsAt(PillarSlot, Index))
+			{
+				TopPriority = FMath::Max(TopPriority, PillarSlot.Priority);
+			}
+		}
+		return TopPriority;
+	}
+
+	bool SlotIsSuppressed(const FARSPillarSlot& Slot, int32 TopPriority)
+	{
+		return Slot.bPreventOverlap && Slot.Priority < TopPriority;
 	}
 }
 
@@ -163,6 +357,22 @@ void FARSGenerator::SampleChain(const TArray<FARSChainSegment>& Chain, float Dis
 	}
 }
 
+FARSPathCurve FARSGenerator::MakeSplineCurve(const USplineComponent* Spline)
+{
+	FARSPathCurve Curve;
+	if (!Spline)
+	{
+		return Curve;
+	}
+	Curve.Length = Spline->GetSplineLength();
+	Curve.Sampler = [Spline](float Distance, FVector& OutLocation, FVector& OutDirection)
+	{
+		OutLocation = Spline->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+		OutDirection = Spline->GetDirectionAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+	};
+	return Curve;
+}
+
 void FARSGenerator::PlanChain(const TArray<FARSChainSegment>& Chain, const FARSSettings& Settings,
                               AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs)
 {
@@ -171,12 +381,25 @@ void FARSGenerator::PlanChain(const TArray<FARSChainSegment>& Chain, const FARSS
 		return;
 	}
 	const float TotalLength = Chain.Last().StartDistance + Chain.Last().Length;
-	PlanPath(
-		[&Chain](float Distance, FVector& OutLocation, FVector& OutDirection)
+	FARSPathSampler SourceSampler = [&Chain](float Distance, FVector& OutLocation, FVector& OutDirection)
+	{
+		SampleChain(Chain, Distance, OutLocation, OutDirection);
+	};
+
+	if (Settings.bDoubleRails)
+	{
+		TArray<FARSCurvePoint> Points;
+		TArray<FARSCurvePoint> Offset;
+		FARSCurve::ReadChainPoints(Chain, Points);
+		FARSCurve::OffsetPoints(Points, Settings.TrackSeparation, Offset);
+		if (USplineComponent* MirrorSpline = FARSCurve::MakeScratchSpline(Offset))
 		{
-			SampleChain(Chain, Distance, OutLocation, OutDirection);
-		},
-		TotalLength, Settings, Payer, BatchId, OutJobs);
+			PlanDoublePath({ SourceSampler, TotalLength }, MakeSplineCurve(MirrorSpline),
+				Settings, Payer, BatchId, OutJobs);
+			return;
+		}
+	}
+	PlanPath(SourceSampler, TotalLength, Settings, Payer, BatchId, OutJobs);
 }
 
 void FARSGenerator::PlanPath(const FARSPathSampler& Sampler, float TotalLength, const FARSSettings& Settings,
@@ -188,128 +411,178 @@ void FARSGenerator::PlanPath(const FARSPathSampler& Sampler, float TotalLength, 
 		return;
 	}
 
-	const float Step = FMath::Max(Settings.UnderRailLength, 50.0f);
+	const FARSUnderRailValues UnderRail = UnderRailValuesFor(Settings, /*bPartner*/ false);
+	const FARSStationPlan Plan = PlanStations(TotalLength, UnderRail.Step);
 
-	// shift up by the content's top height so the top face lands below the rail
-	auto PivotedLocation = [](const FVector& InLocation, const FQuat& Heading, const FQuat& Rotation, const FBox& LocalBounds) -> FVector
+	for (int32 Index = 0; Index < Plan.Count; Index++)
 	{
-		if (!LocalBounds.IsValid)
+		const int32 TopPriority = TopFiringPriority(Settings, Index);
+		if (!Settings.UnderRailDescriptor && TopPriority < 0)
 		{
-			return InLocation;
+			continue; // Nothing to place here, so don't pay for the sample
 		}
-		const FVector Center = LocalBounds.GetCenter();
-		const FVector Top(0.0f, 0.0f, LocalBounds.Max.Z);
-		// pivot about the box center, the gizmo parks here
-		return InLocation + Heading.RotateVector(Center - Top) - Rotation.RotateVector(Center);
-	};
 
-	auto ComputeBasis = [&Sampler](float Distance, FVector& OutLocation, FVector& OutDirection, FVector& OutFlatDirection, FVector& OutRightDirection, FQuat& OutSplineRotation)
-	{
-		FVector Direction = FVector::ForwardVector;
-		Sampler(Distance, OutLocation, Direction);
-		Direction = Direction.GetSafeNormal();
-		OutDirection = Direction.IsNearlyZero() ? FVector::ForwardVector : Direction;
-		OutFlatDirection = Direction;
-		OutFlatDirection.Z = 0.0f;
-		OutFlatDirection = OutFlatDirection.GetSafeNormal();
-		if (OutFlatDirection.IsNearlyZero())
+		const FARSStationBasis Basis = SampleBasis(Sampler, Plan.DistanceAt(Index));
+		if (Settings.UnderRailDescriptor)
 		{
-			OutFlatDirection = FVector::ForwardVector;
+			EmitStamp(Basis, UnderRail.Params, Settings, Payer, BatchId, OutJobs);
 		}
-		OutRightDirection = FVector::CrossProduct(FVector::UpVector, OutFlatDirection);
-		OutSplineRotation = FRotationMatrix::MakeFromXZ(OutDirection, FVector::UpVector).ToQuat(); // X along track, Z near world-up
-	};
-
-	auto SlotStampsAt = [](const FARSPillarSlot& Slot, int32 Index) -> bool
-	{
-		return Index >= Slot.SpacingOffset && ((Index - Slot.SpacingOffset) % Slot.EveryN) == 0;
-	};
-
-	auto StampUnderRailAt = [&](float Distance)
-	{
-		if (!Settings.UnderRailDescriptor)
-		{
-			return;
-		}
-		FVector Location, Direction, FlatDirection, RightDirection;
-		FQuat SplineRotation;
-		ComputeBasis(Distance, Location, Direction, FlatDirection, RightDirection, SplineRotation);
-		// user rotation goes on top of the spline rotation
-		const FQuat Rotation = SplineRotation * Settings.UnderRailRotationOffset.Quaternion();
-		const FVector StampLocation = Location
-			+ FVector(0.0f, 0.0f, Settings.UnderRailZOffset)
-			+ RightDirection * Settings.UnderRailSideOffset
-			+ Direction * Settings.UnderRailForwardOffset;
-		FARSStampJob& Job = OutJobs.AddDefaulted_GetRef();
-		Job.Descriptor = Settings.UnderRailDescriptor;
-		Job.Transform = FTransform(Rotation, PivotedLocation(StampLocation, SplineRotation, Rotation, Settings.UnderRailLocalBounds));
-		Job.LocalBounds = Settings.UnderRailLocalBounds;
-		Job.Payer = Payer;
-		Job.BatchId = BatchId;
-		Job.bCombineIntoOneBlueprint = Settings.bCombineIntoOneBlueprint;
-	};
-
-	const int32 FullTileCount = FMath::FloorToInt(TotalLength / Step);
-	const float Remainder = TotalLength - FullTileCount * Step;
-	const bool bTrailingTileOverhangs = Remainder > 0.5f * Step;
-	int32 StampCount = FMath::Min(bTrailingTileOverhangs ? FullTileCount + 1 : FullTileCount, MaxStampsPerChain);
-
-	for (int32 Index = 0; Index < StampCount; Index++)
-	{
-		const float Distance = (Index + 0.5f) * Step;
-
-		StampUnderRailAt(Distance);
-
-		// pillars: the highest-priority slot always stamps, lower ones only with prevention off
-		int32 TopPriority = -1;
 		for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
 		{
-			if (SlotStampsAt(PillarSlot, Index))
+			if (SlotStampsAt(PillarSlot, Index) && !SlotIsSuppressed(PillarSlot, TopPriority))
 			{
-				TopPriority = FMath::Max(TopPriority, PillarSlot.Priority);
-			}
-		}
-		if (TopPriority >= 0)
-		{
-			FVector Location, Direction, FlatDirection, RightDirection;
-			FQuat SplineRotation;
-			ComputeBasis(Distance, Location, Direction, FlatDirection, RightDirection, SplineRotation);
-
-			for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
-			{
-				if (!SlotStampsAt(PillarSlot, Index))
-				{
-					continue;
-				}
-				if (PillarSlot.bPreventOverlap && PillarSlot.Priority < TopPriority)
-				{
-					continue;
-				}
-
-				const FQuat HeadingRotation = PillarSlot.bAlignToRail
-					? SplineRotation
-					: FRotator(0.0f, FlatDirection.Rotation().Yaw, 0.0f).Quaternion();
-				const FQuat Rotation = HeadingRotation * PillarSlot.RotationOffset.Quaternion();
-				const FVector StampLocation = Location
-					+ FVector(0.0f, 0.0f, PillarSlot.ZOffset)
-					+ RightDirection * PillarSlot.SideOffset
-					+ Direction * PillarSlot.ForwardOffset;
-
-				FARSStampJob& Job = OutJobs.AddDefaulted_GetRef();
-				Job.Descriptor = PillarSlot.Descriptor;
-				Job.Transform = FTransform(Rotation, PivotedLocation(StampLocation, HeadingRotation, Rotation, PillarSlot.LocalBounds));
-				Job.PartIndex = PillarSlot.Priority + 1;
-				Job.LocalBounds = PillarSlot.LocalBounds;
-				Job.Payer = Payer;
-				Job.BatchId = BatchId;
-				Job.bCombineIntoOneBlueprint = Settings.bCombineIntoOneBlueprint;
+				EmitStamp(Basis, PillarParams(PillarSlot), Settings, Payer, BatchId, OutJobs);
 			}
 		}
 	}
 
-	if (Settings.bCoverEndGap && Settings.UnderRailDescriptor && !bTrailingTileOverhangs && Remainder > 1.0f && StampCount < MaxStampsPerChain)
+	if (WantsEndGapStamp(Plan, Settings, UnderRail.bCoverEndGap))
 	{
-		StampUnderRailAt(TotalLength);
+		EmitStamp(SampleBasis(Sampler, TotalLength), UnderRail.Params, Settings, Payer, BatchId, OutJobs);
+	}
+}
+
+void FARSGenerator::PlanDoublePath(const FARSPathCurve& Source, const FARSPathCurve& Mirror, const FARSSettings& Settings,
+                                   AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs)
+{
+	ARS_SCOPE_PERF(PlanPath);
+	if (Source.Length <= 0.0f || Mirror.Length <= 0.0f
+		|| (!Settings.UnderRailDescriptor && Settings.PillarSlots.Num() == 0))
+	{
+		return;
+	}
+
+	const float Step = FMath::Max(Settings.UnderRailLength, 50.0f);
+	const float Separation = Settings.TrackSeparation;
+	// positive separation on the right
+	const bool bSourceIsLeft = Separation >= 0.0f;
+
+	struct FARSTrackSide
+	{
+		const FARSPathCurve* Curve = nullptr;
+		bool bIsLeft = false;
+		bool bIsPartner = false;
+	};
+	const FARSTrackSide Sides[2] = { { &Source, bSourceIsLeft, false }, { &Mirror, !bSourceIsLeft, true } };
+
+	auto SamplePair = [&Source, &Mirror](float Fraction, FVector& OutSourceLocation, FVector& OutSourceDirection,
+	                                     FVector& OutMirrorLocation, FVector& OutMirrorDirection)
+	{
+		Source.Sampler(Fraction * Source.Length, OutSourceLocation, OutSourceDirection);
+		Mirror.Sampler(Fraction * Mirror.Length, OutMirrorLocation, OutMirrorDirection);
+	};
+
+	auto RollAt = [&](float Fraction) -> float
+	{
+		FVector SourceLocation, SourceDirection, MirrorLocation, MirrorDirection;
+		SamplePair(Fraction, SourceLocation, SourceDirection, MirrorLocation, MirrorDirection);
+		const float LeftZ = bSourceIsLeft ? SourceLocation.Z : MirrorLocation.Z;
+		const float RightZ = bSourceIsLeft ? MirrorLocation.Z : SourceLocation.Z;
+		return -FMath::RadiansToDegrees(FMath::Atan2(RightZ - LeftZ, FMath::Abs(Separation)));
+	};
+
+	auto AnchorBasis = [&](float Fraction) -> FARSStationBasis
+	{
+		FVector SourceLocation, SourceDirection, MirrorLocation, MirrorDirection;
+		SamplePair(Fraction, SourceLocation, SourceDirection, MirrorLocation, MirrorDirection);
+		return MakeBasis(0.5f * (SourceLocation + MirrorLocation),
+			SourceDirection.GetSafeNormal() + MirrorDirection.GetSafeNormal());
+	};
+
+	auto ForEachSide = [&Sides](EARSSideMode Mode, TFunctionRef<void(const FARSTrackSide&, bool bMirrored)> Body)
+	{
+		for (const FARSTrackSide& Side : Sides)
+		{
+			switch (Mode)
+			{
+			case EARSSideMode::BothMirrored:   Body(Side, Side.bIsPartner); break;
+			case EARSSideMode::BothSameFacing: Body(Side, false); break;
+			case EARSSideMode::LeftOnly:  if (Side.bIsLeft)  { Body(Side, false); } break;
+			case EARSSideMode::RightOnly: if (!Side.bIsLeft) { Body(Side, false); } break;
+			default: break; // center never lands on a rail
+			}
+		}
+	};
+
+	auto OutwardSignFor = [](const FARSTrackSide& Side) { return Side.bIsLeft ? -1.0f : 1.0f; };
+
+	TArray<float> Distances;
+	auto CollectDistances = [&](float CurveLength, const FARSUnderRailValues& Values)
+	{
+		Distances.Reset();
+		const FARSStationPlan Plan = PlanStations(CurveLength, Values.Step);
+		for (int32 Index = 0; Index < Plan.Count; Index++)
+		{
+			Distances.Add(Plan.DistanceAt(Index));
+		}
+		if (WantsEndGapStamp(Plan, Settings, Values.bCoverEndGap))
+		{
+			Distances.Add(CurveLength);
+		}
+	};
+
+	if (Settings.UnderRailDescriptor)
+	{
+		if (Settings.UnderRailSideMode == EARSSideMode::Center)
+		{
+			FARSUnderRailValues Values = UnderRailValuesFor(Settings, /*bPartner*/ false);
+			CollectDistances(Source.Length, Values);
+			for (const float Distance : Distances)
+			{
+				const float Fraction = Distance / Source.Length;
+				Values.Params.RollDegrees = Settings.bUnderRailAutoRoll ? RollAt(Fraction) : 0.0f;
+				EmitStamp(AnchorBasis(Fraction), Values.Params, Settings, Payer, BatchId, OutJobs);
+			}
+		}
+		else
+		{
+			ForEachSide(Settings.UnderRailSideMode, [&](const FARSTrackSide& Side, bool bMirrored)
+			{
+				FARSUnderRailValues Values = UnderRailValuesFor(Settings, Side.bIsPartner);
+				Values.Params.bMirrored = bMirrored;
+				Values.Params.OutwardSign = OutwardSignFor(Side);
+				CollectDistances(Side.Curve->Length, Values);
+				for (const float Distance : Distances)
+				{
+					EmitStamp(SampleBasis(Side.Curve->Sampler, Distance), Values.Params, Settings, Payer, BatchId, OutJobs);
+				}
+			});
+		}
+	}
+
+	const FARSStationPlan SourcePlan = PlanStations(Source.Length, Step);
+	for (int32 Index = 0; Index < SourcePlan.Count; Index++)
+	{
+		const int32 TopPriority = TopFiringPriority(Settings, Index);
+		if (TopPriority < 0)
+		{
+			continue;
+		}
+		const float Fraction = SourcePlan.DistanceAt(Index) / Source.Length;
+
+		for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
+		{
+			if (!SlotStampsAt(PillarSlot, Index) || SlotIsSuppressed(PillarSlot, TopPriority))
+			{
+				continue;
+			}
+			FARSStampParams Params = PillarParams(PillarSlot);
+
+			if (PillarSlot.SideMode == EARSSideMode::Center)
+			{
+				Params.RollDegrees = PillarSlot.bAutoRoll ? RollAt(Fraction) : 0.0f;
+				EmitStamp(AnchorBasis(Fraction), Params, Settings, Payer, BatchId, OutJobs);
+				continue;
+			}
+			ForEachSide(PillarSlot.SideMode, [&](const FARSTrackSide& Side, bool bMirrored)
+			{
+				Params.bMirrored = bMirrored;
+				Params.OutwardSign = OutwardSignFor(Side);
+				Params.bPartnerSide = Side.bIsPartner;
+				EmitStamp(SampleBasis(Side.Curve->Sampler, Fraction * Side.Curve->Length),
+					Params, Settings, Payer, BatchId, OutJobs);
+			});
+		}
 	}
 }
 

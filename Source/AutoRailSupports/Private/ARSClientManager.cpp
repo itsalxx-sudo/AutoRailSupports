@@ -962,13 +962,46 @@ void AARSClientManager::UpdateARSModeValidity()
 
 int32 AARSClientManager::NumSettingsModesForPart(int32 Part) const
 {
-	return Part == 0 ? 2 : 3;
+	if (Part == 0)
+	{
+		return mWorking.bDoubleRails ? 3 : 2;
+	}
+	return 3;
+}
+
+bool AARSClientManager::IsEditingPartnerUnderRail() const
+{
+	return mSelectedPart == 0 && mWorking.bDoubleRails && mWorking.bSplitUnderRailSides && mEditingPartnerSide;
+}
+
+AARSClientManager::FARSUnderRailEdit AARSClientManager::SelectedUnderRailEdit()
+{
+	FARSUnderRailEdit Edit;
+	if (IsEditingPartnerUnderRail())
+	{
+		Edit.Length = &mWorking.UnderRailPartner.Length;
+		Edit.Rotation = &mWorking.UnderRailPartner.RotationOffset;
+		Edit.ZOffset = &mWorking.UnderRailPartner.ZOffset;
+		Edit.SideOffset = &mWorking.UnderRailPartner.SideOffset;
+		Edit.ForwardOffset = &mWorking.UnderRailPartner.ForwardOffset;
+		return Edit;
+	}
+	Edit.Length = &mWorking.UnderRailLength;
+	Edit.Rotation = &mWorking.UnderRailRotationOffset;
+	Edit.ZOffset = &mWorking.UnderRailZOffset;
+	Edit.SideOffset = &mWorking.UnderRailSideOffset;
+	Edit.ForwardOffset = &mWorking.UnderRailForwardOffset;
+	return Edit;
 }
 
 EARSSettingsMode AARSClientManager::SettingsModeForPartIndex(int32 Part, int32 Index) const
 {
 	if (Part == 0)
 	{
+		if (Index == 2 && mWorking.bDoubleRails)
+		{
+			return EARSSettingsMode::TrackSeparation;
+		}
 		return Index == 1 ? EARSSettingsMode::TilingLength : EARSSettingsMode::General;
 	}
 	switch (Index)
@@ -1113,26 +1146,40 @@ void AARSClientManager::ApplyArrow(EARSArrow Arrow)
 	if (Mode == EARSSettingsMode::General)
 	{
 		const float StepCm = GetPositionStepCm();
+		const FARSUnderRailEdit Edit = SelectedUnderRailEdit();
 		if (bAlong)
 		{
-			float& Forward = bUnderRail ? mWorking.UnderRailForwardOffset : mWorking.PillarForwardOffsets[Slot];
+			float& Forward = bUnderRail ? *Edit.ForwardOffset : mWorking.PillarForwardOffsets[Slot];
 			Forward += AlongSign * StepCm;
 		}
 		else
 		{
-			float& Side = bUnderRail ? mWorking.UnderRailSideOffset : mWorking.PillarSideOffsets[Slot];
+			float& Side = bUnderRail ? *Edit.SideOffset : mWorking.PillarSideOffsets[Slot];
 			Side += SideSign * StepCm;
 		}
 	}
 	else
 	{
-		if (!bAlong) { return; }
-		const int32 IntStep = static_cast<int32>(AlongSign);
+		const bool bWantsSide = (Mode == EARSSettingsMode::TrackSeparation);
+		if (bAlong == bWantsSide) { return; }
+		const float Sign = bWantsSide ? SideSign : AlongSign;
+		const int32 IntStep = static_cast<int32>(Sign);
 		switch (Mode)
 		{
-		case EARSSettingsMode::TilingLength:  mWorking.UnderRailLength += AlongSign * GetPositionStepCm(); break;
+		case EARSSettingsMode::TilingLength:  *SelectedUnderRailEdit().Length += Sign * GetPositionStepCm(); break;
 		case EARSSettingsMode::PillarSpacing: mWorking.PillarEveryNs[Slot] += IntStep; break;
 		case EARSSettingsMode::SpacingOffset: mWorking.PillarSpacingOffsets[Slot] += IntStep; break;
+		case EARSSettingsMode::TrackSeparation:
+		{
+			float Next = mWorking.TrackSeparation + Sign * GetPositionStepCm();
+			// stepping into the gap swaps to the other side
+			if (FMath::Abs(Next) < FARSSettingsData::MinTrackSeparation)
+			{
+				Next = (mWorking.TrackSeparation > 0.0f ? -1.0f : 1.0f) * FARSSettingsData::MinTrackSeparation;
+			}
+			mWorking.TrackSeparation = Next;
+			break;
+		}
 		default: return;
 		}
 	}
@@ -1149,7 +1196,7 @@ void AARSClientManager::ApplyVertical(float Sign)
 	// Vertical offset is General mode only
 	if (GetCurrentSettingsMode() != EARSSettingsMode::General) { return; }
 	mWorking.EnsureSlotArraySizes();
-	float& ZOffset = (mSelectedPart == 0) ? mWorking.UnderRailZOffset : mWorking.PillarZOffsets[mSelectedPart - 1];
+	float& ZOffset = (mSelectedPart == 0) ? *SelectedUnderRailEdit().ZOffset : mWorking.PillarZOffsets[mSelectedPart - 1];
 	ZOffset += Sign * GetPositionStepCm();
 	SendWorkingSettings();
 }
@@ -1159,7 +1206,7 @@ void AARSClientManager::ApplyRotate(float Sign)
 	if (!mARSModeActive) { return; }
 	if (GetCurrentSettingsMode() != EARSSettingsMode::General) { return; }
 	mWorking.EnsureSlotArraySizes();
-	FRotator& Rotation = (mSelectedPart == 0) ? mWorking.UnderRailRotationOffset : mWorking.PillarRotationOffsets[mSelectedPart - 1];
+	FRotator& Rotation = (mSelectedPart == 0) ? *SelectedUnderRailEdit().Rotation : mWorking.PillarRotationOffsets[mSelectedPart - 1];
 	const float Delta = Sign * GetRotationStepDegrees();
 	switch (mRotationAxis)
 	{
@@ -1316,11 +1363,28 @@ void AARSClientManager::BuildSelectedSettingsRows(TArray<FARSInfoPanelRow>& OutR
 
 	if (bUnderRail)
 	{
+		const bool bPartner = mSelectedPart == 0 && mWorking.bDoubleRails
+			&& mWorking.bSplitUnderRailSides && mEditingPartnerSide;
+		const FARSUnderRailSide& Partner = mWorking.UnderRailPartner;
+		const float Length = bPartner ? Partner.Length : mWorking.UnderRailLength;
+		const FRotator Rotation = bPartner ? Partner.RotationOffset : mWorking.UnderRailRotationOffset;
+		const FVector Offsets = bPartner
+			? FVector(Partner.ForwardOffset, Partner.SideOffset, Partner.ZOffset)
+			: FVector(mWorking.UnderRailForwardOffset, mWorking.UnderRailSideOffset, mWorking.UnderRailZOffset);
+
 		AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowTilingLength", "Tiling Length:"),
-			Meters(mWorking.UnderRailLength), Mode == EARSSettingsMode::TilingLength);
-		AddOffsetAndRotationRows(
-			mWorking.UnderRailRotationOffset,
-			FVector(mWorking.UnderRailForwardOffset, mWorking.UnderRailSideOffset, mWorking.UnderRailZOffset));
+			Meters(Length), Mode == EARSSettingsMode::TilingLength);
+		if (mWorking.bDoubleRails)
+		{
+			const FText Side = mWorking.TrackSeparation >= 0.0f
+				? NSLOCTEXT("AutoRailSupports", "SideRight", "right")
+				: NSLOCTEXT("AutoRailSupports", "SideLeft", "left");
+			AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowTrackSeparation", "Track Separation:"),
+				FText::Format(NSLOCTEXT("AutoRailSupports", "SeparationValue", "{0} ({1})"),
+					Meters(FMath::Abs(mWorking.TrackSeparation)), Side),
+				Mode == EARSSettingsMode::TrackSeparation);
+		}
+		AddOffsetAndRotationRows(Rotation, Offsets);
 	}
 	else if (mWorking.PillarForwardOffsets.IsValidIndex(Slot))
 	{
@@ -1341,9 +1405,16 @@ void AARSClientManager::RefreshInfoPanel()
 		return;
 	}
 	const bool bUnderRail = (mSelectedPart == 0);
-	const FText PartLabel = bUnderRail
+	FText PartLabel = bUnderRail
 		? NSLOCTEXT("AutoRailSupports", "PartUnderRail", "Under-Rail")
 		: FText::Format(NSLOCTEXT("AutoRailSupports", "PartPillar", "Pillar Slot {0}"), FText::AsNumber(mSelectedPart));
+	if (bUnderRail && mWorking.bDoubleRails && mWorking.bSplitUnderRailSides)
+	{
+		PartLabel = FText::Format(NSLOCTEXT("AutoRailSupports", "PartUnderRailSide", "Under-Rail ({0})"),
+			mEditingPartnerSide
+				? NSLOCTEXT("AutoRailSupports", "SideSecondTrack", "Second Track")
+				: NSLOCTEXT("AutoRailSupports", "SideMainTrack", "Main Track"));
+	}
 
 	const FString Name = GetSelectedBlueprintName();
 	const FText BlueprintName = Name.IsEmpty() ? NSLOCTEXT("AutoRailSupports", "PartNone", "None") : FText::FromString(Name);
@@ -1377,7 +1448,7 @@ void AARSClientManager::UpdateRotationGizmo()
 	}
 	// anchor on the selected part's nearest stamp
 	FTransform SegmentTransform;
-	if (!mPreviewActor->GetClosestStampTransform(mSelectedPart, Pawn->GetActorLocation(), SegmentTransform))
+	if (!mPreviewActor->GetClosestStampTransform(mSelectedPart, Pawn->GetActorLocation(), SegmentTransform, &mEditingPartnerSide))
 	{
 		DestroyRotationGizmo();
 		return;
@@ -1443,6 +1514,7 @@ FText AARSClientManager::GetSettingsModeDisplayText(EARSSettingsMode Mode)
 	case EARSSettingsMode::TilingLength:  return NSLOCTEXT("AutoRailSupports", "ModeTiling", "Settings Mode: Tiling Length");
 	case EARSSettingsMode::PillarSpacing: return NSLOCTEXT("AutoRailSupports", "ModeSpacing", "Settings Mode: Pillar Spacing");
 	case EARSSettingsMode::SpacingOffset: return NSLOCTEXT("AutoRailSupports", "ModeOffset", "Settings Mode: Spacing Offset");
+	case EARSSettingsMode::TrackSeparation: return NSLOCTEXT("AutoRailSupports", "ModeSeparation", "Settings Mode: Track Separation");
 	default:                              return NSLOCTEXT("AutoRailSupports", "ModeRotationOffset", "Settings Mode: Rotation & Offset");
 	}
 }

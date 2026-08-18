@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "ARSSettingsData.h"
 
 class AFGBlueprintProxy;
 class AFGBuildableRailroadTrack;
@@ -17,6 +18,8 @@ struct FARSPillarSlot
 	int32 Priority = 0;
 	bool bPreventOverlap = true;
 	bool bAlignToRail = false;
+	EARSSideMode SideMode = EARSSideMode::Center;
+	bool bAutoRoll = false;
 	FRotator RotationOffset = FRotator::ZeroRotator;
 	float ZOffset = 0.0f;
 	float SideOffset = 0.0f;
@@ -39,6 +42,14 @@ struct FARSSettings
 	float UnderRailZOffset = 0.0f;
 	float UnderRailSideOffset = 0.0f;
 	float UnderRailForwardOffset = 0.0f;
+
+	bool bDoubleRails = false;
+	// signed
+	float TrackSeparation = 600.0f;
+	EARSSideMode UnderRailSideMode = EARSSideMode::BothMirrored;
+	bool bUnderRailAutoRoll = false;
+	bool bSplitUnderRailSides = false;
+	FARSUnderRailSide PartnerUnderRail;
 };
 
 struct FARSStampJob
@@ -46,6 +57,8 @@ struct FARSStampJob
 	TWeakObjectPtr<UFGBlueprintDescriptor> Descriptor;
 	FTransform Transform;
 	int32 PartIndex = 0;
+	// sits on the second track rather than the rail being placed
+	bool bPartnerSide = false;
 	TWeakObjectPtr<AFGCharacterPlayer> Payer;
 	FBox LocalBounds = FBox(ForceInit);
 	uint64 BatchId = 0;
@@ -66,18 +79,29 @@ struct FARSChainSegment
 	float Length = 0.0f;
 };
 
+using FARSPathSampler = TFunction<void(float Distance, FVector& OutLocation, FVector& OutDirection)>;
+
+struct FARSPathCurve
+{
+	FARSPathSampler Sampler;
+	float Length = 0.0f;
+};
+
 class AUTORAILSUPPORTS_API FARSGenerator
 {
 public:
 	static TArray<TArray<FARSChainSegment>> BuildChains(const TArray<AFGBuildableRailroadTrack*>& Tracks);
-
-	using FARSPathSampler = TFunction<void(float Distance, FVector& OutLocation, FVector& OutDirection)>;
 
 	static void PlanChain(const TArray<FARSChainSegment>& Chain, const FARSSettings& Settings,
 	                      AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs);
 
 	static void PlanPath(const FARSPathSampler& Sampler, float TotalLength, const FARSSettings& Settings,
 	                     AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs);
+
+	static void PlanDoublePath(const FARSPathCurve& Source, const FARSPathCurve& Mirror, const FARSSettings& Settings,
+	                           AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs);
+
+	static FARSPathCurve MakeSplineCurve(const class USplineComponent* Spline);
 
 	static bool ExecuteStampJob(UWorld* World, const FARSStampJob& Job, AFGBlueprintProxy*& InOutSharedProxy, FText& OutFailReason);
 

@@ -2,6 +2,22 @@
 
 All notable changes to Auto Rail Supports are documented here.
 
+## Unreleased
+
+### Added
+
+- **Double Rails Mode**
+  - Track Separation sets the distance between the tracks. Negative puts the second track on your left, positive on your right.
+  - Per-slot placement - Centered, Both sides mirrored, Both sides same facing, Left side only, Right side only.
+  - Pillar auto roll, tilts when the two rails sit at different heights through a curve.
+  - Each track's under-rail segments are tiled along that track's own length. Pillar spacing still counts on the rail you're building.
+  - Split Under-Rail sides, gives the second track its own adjustments. In ARS Adjustments the side you're closest to is the one you edit, matching where the gizmo already sits.
+
+### Changed
+
+- Blueprints now anchor by the middle of their own contents rather than the Blueprint Designer
+  origin.
+
 ## [1.0.1]
 - Fixed game crash on 1.2.4 dedicated servers running CL#491125 ARS build - Rebuilt for 1.2.4.
 

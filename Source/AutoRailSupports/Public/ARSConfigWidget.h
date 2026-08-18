@@ -133,6 +133,35 @@ protected:
 	// checked = the next run's blueprints group into one blueprint for dismantling
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> CombineBlueprintCheck;
 
+	//DOUBLE RAILS
+	// checked = supports are placed for a second track alongside the one you build
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> DoubleRailsCheck;
+	// distance between the two tracks
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> TrackSeparationSpin;
+	// placement of the blueprint
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> UnderSideModeCombo;
+	// checked = tilt when the two rails sit at different heights
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> UnderAutoRollCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar1SideModeCombo;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar2SideModeCombo;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar3SideModeCombo;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar4SideModeCombo;
+	// checked = the second track's under-rail gets its own settings
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> SplitUnderRailSidesCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerLengthSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> PartnerCoverGapCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerYawSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerPitchSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerRollSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerVerticalSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerSidewaysSpin;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerForwardSpin;
+
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar1AutoRollCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar2AutoRollCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar3AutoRollCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar4AutoRollCheck;
+
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> PresetCombo;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> PresetNameBox;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> SavePresetButton;
@@ -171,6 +200,29 @@ private:
 	UFUNCTION() void OnUnderCoverGapChanged(bool bIsChecked);
 
 	UFUNCTION() void OnCombineBlueprintChanged(bool bIsChecked);
+
+	UFUNCTION() void OnDoubleRailsChanged(bool bIsChecked);
+	UFUNCTION() void OnTrackSeparationCommitted(float Value);
+	UFUNCTION() void OnUnderSideModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION() void OnUnderAutoRollChanged(bool bIsChecked);
+	UFUNCTION() void OnPillarSideModeChanged0(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION() void OnPillarSideModeChanged1(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION() void OnPillarSideModeChanged2(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION() void OnPillarSideModeChanged3(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION() void OnSplitUnderRailSidesChanged(bool bIsChecked);
+	UFUNCTION() void OnPartnerLengthCommitted(float Value);
+	UFUNCTION() void OnPartnerCoverGapChanged(bool bIsChecked);
+	UFUNCTION() void OnPartnerYawCommitted(float Value);
+	UFUNCTION() void OnPartnerPitchCommitted(float Value);
+	UFUNCTION() void OnPartnerRollCommitted(float Value);
+	UFUNCTION() void OnPartnerVOffsetCommitted(float Value);
+	UFUNCTION() void OnPartnerHOffsetCommitted(float Value);
+	UFUNCTION() void OnPartnerFOffsetCommitted(float Value);
+
+	UFUNCTION() void OnPillarAutoRollChanged0(bool bIsChecked);
+	UFUNCTION() void OnPillarAutoRollChanged1(bool bIsChecked);
+	UFUNCTION() void OnPillarAutoRollChanged2(bool bIsChecked);
+	UFUNCTION() void OnPillarAutoRollChanged3(bool bIsChecked);
 
 	UFUNCTION() void OnPillarBlueprintChanged0(FString SelectedItem, ESelectInfo::Type SelectionType);
 	UFUNCTION() void OnPillarBlueprintChanged1(FString SelectedItem, ESelectInfo::Type SelectionType);
@@ -233,6 +285,12 @@ private:
 	void HandlePillarVOffsetCommitted(int32 SlotIndex, float Value);
 	void HandlePillarHOffsetCommitted(int32 SlotIndex, float Value);
 	void HandlePillarFOffsetCommitted(int32 SlotIndex, float Value);
+	void HandlePillarSideModeChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType);
+	void HandlePillarAutoRollChanged(int32 SlotIndex, bool bIsChecked);
+
+	static void FillSideModeOptions(UComboBoxString* Combo);
+	static FString SideModeToOption(EARSSideMode Mode);
+	static EARSSideMode OptionToSideMode(const FString& Option);
 
 private:
 	FARSSettingsData mWorking;
@@ -262,4 +320,6 @@ private:
 	TArray<UARSSliderWidget*> mPillarVerticalSpins;
 	TArray<UARSSliderWidget*> mPillarSidewaysSpins;
 	TArray<UARSSliderWidget*> mPillarForwardSpins;
+	TArray<UComboBoxString*> mPillarSideModeCombos;
+	TArray<UCheckBox*> mPillarAutoRollChecks;
 };

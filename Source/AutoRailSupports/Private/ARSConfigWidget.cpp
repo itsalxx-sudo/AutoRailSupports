@@ -58,6 +58,8 @@ void UARSConfigWidget::NativeOnInitialized()
 	mPillarVerticalSpins = { Pillar1VerticalSpin, Pillar2VerticalSpin, Pillar3VerticalSpin, Pillar4VerticalSpin };
 	mPillarSidewaysSpins = { Pillar1SidewaysSpin, Pillar2SidewaysSpin, Pillar3SidewaysSpin, Pillar4SidewaysSpin };
 	mPillarForwardSpins = { Pillar1ForwardSpin, Pillar2ForwardSpin, Pillar3ForwardSpin, Pillar4ForwardSpin };
+	mPillarSideModeCombos = { Pillar1SideModeCombo, Pillar2SideModeCombo, Pillar3SideModeCombo, Pillar4SideModeCombo };
+	mPillarAutoRollChecks = { Pillar1AutoRollCheck, Pillar2AutoRollCheck, Pillar3AutoRollCheck, Pillar4AutoRollCheck };
 
 	const FARSModConfigStruct ModConfig = FARSModConfigStruct::GetActiveConfig(this);
 
@@ -101,6 +103,20 @@ void UARSConfigWidget::NativeOnInitialized()
 		ConfigureSlider(mPillarSidewaysSpins[SlotIndex], -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
 		ConfigureSlider(mPillarForwardSpins[SlotIndex], -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
 	}
+	// signed separation
+	ConfigureSlider(TrackSeparationSpin, -20.0f, 20.0f, 1.0f, 2, /*fine*/ true);
+	ConfigureSlider(PartnerLengthSpin, 0.5f, 48.0f, 1.0f, 2, /*fine*/ true);
+	ConfigureRotationSlider(PartnerYawSpin);
+	ConfigureRotationSlider(PartnerPitchSpin);
+	ConfigureRotationSlider(PartnerRollSpin);
+	ConfigureSlider(PartnerVerticalSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
+	ConfigureSlider(PartnerSidewaysSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
+	ConfigureSlider(PartnerForwardSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
+	FillSideModeOptions(UnderSideModeCombo);
+	for (UComboBoxString* SideModeCombo : mPillarSideModeCombos)
+	{
+		FillSideModeOptions(SideModeCombo);
+	}
 
 	if (MasterButton) { MasterButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnMasterToggleClicked); }
 	if (CloseButton) { CloseButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnCloseClicked); }
@@ -115,6 +131,28 @@ void UARSConfigWidget::NativeOnInitialized()
 	if (UnderForwardSpin) { UnderForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderFOffsetCommitted); }
 	if (UnderCoverGapCheck) { UnderCoverGapCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnUnderCoverGapChanged); }
 	if (CombineBlueprintCheck) { CombineBlueprintCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnCombineBlueprintChanged); }
+
+	if (DoubleRailsCheck) { DoubleRailsCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnDoubleRailsChanged); }
+	if (TrackSeparationSpin) { TrackSeparationSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnTrackSeparationCommitted); }
+	if (UnderSideModeCombo) { UnderSideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnUnderSideModeChanged); }
+	if (UnderAutoRollCheck) { UnderAutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnUnderAutoRollChanged); }
+	if (Pillar1SideModeCombo) { Pillar1SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged0); }
+	if (Pillar2SideModeCombo) { Pillar2SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged1); }
+	if (Pillar3SideModeCombo) { Pillar3SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged2); }
+	if (Pillar4SideModeCombo) { Pillar4SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged3); }
+	if (SplitUnderRailSidesCheck) { SplitUnderRailSidesCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnSplitUnderRailSidesChanged); }
+	if (PartnerLengthSpin) { PartnerLengthSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerLengthCommitted); }
+	if (PartnerCoverGapCheck) { PartnerCoverGapCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPartnerCoverGapChanged); }
+	if (PartnerYawSpin) { PartnerYawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerYawCommitted); }
+	if (PartnerPitchSpin) { PartnerPitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerPitchCommitted); }
+	if (PartnerRollSpin) { PartnerRollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerRollCommitted); }
+	if (PartnerVerticalSpin) { PartnerVerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerVOffsetCommitted); }
+	if (PartnerSidewaysSpin) { PartnerSidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerHOffsetCommitted); }
+	if (PartnerForwardSpin) { PartnerForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerFOffsetCommitted); }
+	if (Pillar1AutoRollCheck) { Pillar1AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged0); }
+	if (Pillar2AutoRollCheck) { Pillar2AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged1); }
+	if (Pillar3AutoRollCheck) { Pillar3AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged2); }
+	if (Pillar4AutoRollCheck) { Pillar4AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged3); }
 
 	if (Pillar1Combo) { Pillar1Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged0); }
 	if (Pillar2Combo) { Pillar2Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged1); }
@@ -490,6 +528,19 @@ void UARSConfigWidget::PushWorkingToControls()
 	SetSpin(UnderForwardSpin, mWorking.UnderRailForwardOffset / 100.0f);
 	if (UnderCoverGapCheck) { UnderCoverGapCheck->SetIsChecked(mWorking.bCoverEndGap); }
 	if (CombineBlueprintCheck) { CombineBlueprintCheck->SetIsChecked(mWorking.bCombineIntoOneBlueprint); }
+	if (DoubleRailsCheck) { DoubleRailsCheck->SetIsChecked(mWorking.bDoubleRails); }
+	if (UnderAutoRollCheck) { UnderAutoRollCheck->SetIsChecked(mWorking.bUnderRailAutoRoll); }
+	if (UnderSideModeCombo) { UnderSideModeCombo->SetSelectedOption(SideModeToOption(mWorking.UnderRailSideMode)); }
+	SetSpin(TrackSeparationSpin, mWorking.TrackSeparation / 100.0f);
+	if (SplitUnderRailSidesCheck) { SplitUnderRailSidesCheck->SetIsChecked(mWorking.bSplitUnderRailSides); }
+	if (PartnerCoverGapCheck) { PartnerCoverGapCheck->SetIsChecked(mWorking.UnderRailPartner.bCoverEndGap); }
+	SetSpin(PartnerLengthSpin, mWorking.UnderRailPartner.Length / 100.0f);
+	SetSpin(PartnerYawSpin, mWorking.UnderRailPartner.RotationOffset.Yaw);
+	SetSpin(PartnerPitchSpin, mWorking.UnderRailPartner.RotationOffset.Pitch);
+	SetSpin(PartnerRollSpin, mWorking.UnderRailPartner.RotationOffset.Roll);
+	SetSpin(PartnerVerticalSpin, mWorking.UnderRailPartner.ZOffset / 100.0f);
+	SetSpin(PartnerSidewaysSpin, mWorking.UnderRailPartner.SideOffset / 100.0f);
+	SetSpin(PartnerForwardSpin, mWorking.UnderRailPartner.ForwardOffset / 100.0f);
 
 	for (int32 SlotIndex = 0; SlotIndex < FARSSettingsData::NumPillarSlots; SlotIndex++)
 	{
@@ -510,6 +561,14 @@ void UARSConfigWidget::PushWorkingToControls()
 		SetSpin(mPillarVerticalSpins.IsValidIndex(SlotIndex) ? mPillarVerticalSpins[SlotIndex] : nullptr, mWorking.PillarZOffsets[SlotIndex] / 100.0f);
 		SetSpin(mPillarSidewaysSpins.IsValidIndex(SlotIndex) ? mPillarSidewaysSpins[SlotIndex] : nullptr, mWorking.PillarSideOffsets[SlotIndex] / 100.0f);
 		SetSpin(mPillarForwardSpins.IsValidIndex(SlotIndex) ? mPillarForwardSpins[SlotIndex] : nullptr, mWorking.PillarForwardOffsets[SlotIndex] / 100.0f);
+		if (mPillarSideModeCombos.IsValidIndex(SlotIndex) && mPillarSideModeCombos[SlotIndex])
+		{
+			mPillarSideModeCombos[SlotIndex]->SetSelectedOption(SideModeToOption(mWorking.PillarSideModes[SlotIndex]));
+		}
+		if (mPillarAutoRollChecks.IsValidIndex(SlotIndex) && mPillarAutoRollChecks[SlotIndex])
+		{
+			mPillarAutoRollChecks[SlotIndex]->SetIsChecked(mWorking.PillarAutoRoll[SlotIndex]);
+		}
 	}
 
 	UpdateBlueprintDimsText();
@@ -670,6 +729,158 @@ void UARSConfigWidget::OnCombineBlueprintChanged(bool bIsChecked)
 	SendSettings();
 }
 
+//DOUBLE RAILS
+namespace
+{
+	const TArray<FString>& SideModeOptions()
+	{
+		static const TArray<FString> Options = {
+			TEXT("Centered"),
+			TEXT("Both sides, mirrored"),
+			TEXT("Both sides, same facing"),
+			TEXT("Left side only"),
+			TEXT("Right side only")
+		};
+		return Options;
+	}
+}
+
+void UARSConfigWidget::FillSideModeOptions(UComboBoxString* Combo)
+{
+	if (!Combo)
+	{
+		return;
+	}
+	Combo->ClearOptions();
+	for (const FString& Option : SideModeOptions())
+	{
+		Combo->AddOption(Option);
+	}
+}
+
+FString UARSConfigWidget::SideModeToOption(EARSSideMode Mode)
+{
+	const int32 Index = static_cast<int32>(Mode);
+	return SideModeOptions().IsValidIndex(Index) ? SideModeOptions()[Index] : SideModeOptions()[0];
+}
+
+EARSSideMode UARSConfigWidget::OptionToSideMode(const FString& Option)
+{
+	const int32 Index = SideModeOptions().IndexOfByKey(Option);
+	return Index == INDEX_NONE ? EARSSideMode::Center : static_cast<EARSSideMode>(Index);
+}
+
+void UARSConfigWidget::OnDoubleRailsChanged(bool bIsChecked)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.bDoubleRails = bIsChecked;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnTrackSeparationCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.TrackSeparation = Value * 100.0f;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnUnderSideModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (bSuppressEvents || SelectionType == ESelectInfo::Direct) { return; }
+	mWorking.UnderRailSideMode = OptionToSideMode(SelectedItem);
+	SendSettings();
+}
+
+void UARSConfigWidget::OnUnderAutoRollChanged(bool bIsChecked)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.bUnderRailAutoRoll = bIsChecked;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnSplitUnderRailSidesChanged(bool bIsChecked)
+{
+	if (bSuppressEvents) { return; }
+	if (bIsChecked && !mWorking.bSplitUnderRailSides)
+	{
+		mWorking.SeedPartnerFromUnderRail();
+	}
+	mWorking.bSplitUnderRailSides = bIsChecked;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerLengthCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.Length = Value * 100.0f;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerCoverGapChanged(bool bIsChecked)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.bCoverEndGap = bIsChecked;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerYawCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.RotationOffset.Yaw = Value;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerPitchCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.RotationOffset.Pitch = Value;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerRollCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.RotationOffset.Roll = Value;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerVOffsetCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.ZOffset = Value * 100.0f;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerHOffsetCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.SideOffset = Value * 100.0f;
+	SendSettings();
+}
+
+void UARSConfigWidget::OnPartnerFOffsetCommitted(float Value)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.UnderRailPartner.ForwardOffset = Value * 100.0f;
+	SendSettings();
+}
+
+void UARSConfigWidget::HandlePillarSideModeChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (bSuppressEvents || SelectionType == ESelectInfo::Direct) { return; }
+	mWorking.EnsureSlotArraySizes();
+	mWorking.PillarSideModes[SlotIndex] = OptionToSideMode(SelectedItem);
+	SendSettings();
+}
+
+void UARSConfigWidget::HandlePillarAutoRollChanged(int32 SlotIndex, bool bIsChecked)
+{
+	if (bSuppressEvents) { return; }
+	mWorking.EnsureSlotArraySizes();
+	mWorking.PillarAutoRoll[SlotIndex] = bIsChecked;
+	SendSettings();
+}
+
 void UARSConfigWidget::HandlePillarBlueprintChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType)
 {
 	if (bSuppressEvents || SelectionType == ESelectInfo::Direct)
@@ -777,6 +988,14 @@ void UARSConfigWidget::OnPillarAlignChanged0(bool bIsChecked) { HandlePillarAlig
 void UARSConfigWidget::OnPillarAlignChanged1(bool bIsChecked) { HandlePillarAlignChanged(1, bIsChecked); }
 void UARSConfigWidget::OnPillarAlignChanged2(bool bIsChecked) { HandlePillarAlignChanged(2, bIsChecked); }
 void UARSConfigWidget::OnPillarAlignChanged3(bool bIsChecked) { HandlePillarAlignChanged(3, bIsChecked); }
+void UARSConfigWidget::OnPillarSideModeChanged0(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(0, SelectedItem, SelectionType); }
+void UARSConfigWidget::OnPillarSideModeChanged1(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(1, SelectedItem, SelectionType); }
+void UARSConfigWidget::OnPillarSideModeChanged2(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(2, SelectedItem, SelectionType); }
+void UARSConfigWidget::OnPillarSideModeChanged3(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(3, SelectedItem, SelectionType); }
+void UARSConfigWidget::OnPillarAutoRollChanged0(bool bIsChecked) { HandlePillarAutoRollChanged(0, bIsChecked); }
+void UARSConfigWidget::OnPillarAutoRollChanged1(bool bIsChecked) { HandlePillarAutoRollChanged(1, bIsChecked); }
+void UARSConfigWidget::OnPillarAutoRollChanged2(bool bIsChecked) { HandlePillarAutoRollChanged(2, bIsChecked); }
+void UARSConfigWidget::OnPillarAutoRollChanged3(bool bIsChecked) { HandlePillarAutoRollChanged(3, bIsChecked); }
 void UARSConfigWidget::OnPillarPriorityChanged0(bool bIsChecked) { HandlePillarPriorityChanged(0, bIsChecked); }
 void UARSConfigWidget::OnPillarPriorityChanged1(bool bIsChecked) { HandlePillarPriorityChanged(1, bIsChecked); }
 void UARSConfigWidget::OnPillarPriorityChanged2(bool bIsChecked) { HandlePillarPriorityChanged(2, bIsChecked); }

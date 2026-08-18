@@ -514,6 +514,12 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
 	Settings.UnderRailZOffset = Data.UnderRailZOffset;
 	Settings.UnderRailSideOffset = Data.UnderRailSideOffset;
 	Settings.UnderRailForwardOffset = Data.UnderRailForwardOffset;
+	Settings.bDoubleRails = Data.bDoubleRails;
+	Settings.TrackSeparation = Data.TrackSeparation;
+	Settings.UnderRailSideMode = Data.UnderRailSideMode;
+	Settings.bUnderRailAutoRoll = Data.bUnderRailAutoRoll;
+	Settings.bSplitUnderRailSides = Data.bSplitUnderRailSides;
+	Settings.PartnerUnderRail = Data.UnderRailPartner;
 
 	if (!BlueprintSubsystem)
 	{
@@ -559,6 +565,8 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
 		Slot.EveryN = FMath::Max(1, Data.PillarEveryNs[SlotIndex]);
 		Slot.SpacingOffset = FMath::Max(0, Data.PillarSpacingOffsets[SlotIndex]);
 		Slot.bAlignToRail = Data.PillarAlignToRail[SlotIndex];
+		Slot.SideMode = Data.PillarSideModes[SlotIndex];
+		Slot.bAutoRoll = Data.PillarAutoRoll[SlotIndex];
 		Slot.Priority = SlotIndex; // slot 4 outranks slot 1 when both land on the same segment
 		Slot.bPreventOverlap = Data.PillarPreventOverlap[SlotIndex];
 		Slot.RotationOffset = Data.PillarRotationOffsets[SlotIndex];

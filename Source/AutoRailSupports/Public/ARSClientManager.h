@@ -28,7 +28,7 @@ class UWidget;
 enum class EARSModeGun : uint8 { Build, Dismantle };
 
 // adjustment mode
-enum class EARSSettingsMode : uint8 { General, TilingLength, PillarSpacing, SpacingOffset };
+enum class EARSSettingsMode : uint8 { General, TilingLength, PillarSpacing, SpacingOffset, TrackSeparation };
 
 enum class EARSArrow : uint8 { Forward, Backward, Left, Right };
 
@@ -165,6 +165,17 @@ private:
 
 	int32 NumSettingsModesForPart(int32 Part) const;
 	EARSSettingsMode SettingsModeForPartIndex(int32 Part, int32 Index) const;
+
+	struct FARSUnderRailEdit
+	{
+		float* Length = nullptr;
+		FRotator* Rotation = nullptr;
+		float* ZOffset = nullptr;
+		float* SideOffset = nullptr;
+		float* ForwardOffset = nullptr;
+	};
+	bool IsEditingPartnerUnderRail() const;
+	FARSUnderRailEdit SelectedUnderRailEdit();
 	EARSSettingsMode GetCurrentSettingsMode() const { return SettingsModeForPartIndex(mSelectedPart, mSettingsModeIndex); }
 
 	FVector GetActiveRailForward();
@@ -254,6 +265,8 @@ private:
 	int32 mSelectedPart = 0;
 	int32 mSettingsModeIndex = 0;
 	int32 mRotationAxis = 0;
+	// which rail the nearest under-rail stamp sits on
+	bool mEditingPartnerSide = false;
 	FARSSettingsData mWorking;
 	FBoundMappingContextHandle mModeSharedHandle;
 	FBoundMappingContextHandle mModeDismantleHandle;

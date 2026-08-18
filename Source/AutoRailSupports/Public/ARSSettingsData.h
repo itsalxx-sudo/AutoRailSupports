@@ -2,12 +2,51 @@
 #include "CoreMinimal.h"
 #include "ARSSettingsData.generated.h"
 
+UENUM()
+enum class EARSSideMode : uint8
+{
+	// centered between the tracks
+	Center,
+	// on each rail, the second rotated 180 degrees
+	BothMirrored,
+	// on each rail, both pointing the same way
+	BothSameFacing,
+	LeftOnly,
+	RightOnly
+};
+
+USTRUCT()
+struct AUTORAILSUPPORTS_API FARSUnderRailSide
+{
+	GENERATED_BODY()
+
+	UPROPERTY(SaveGame)
+	float Length = 800.0f;
+
+	UPROPERTY(SaveGame)
+	bool bCoverEndGap = true;
+
+	UPROPERTY(SaveGame)
+	FRotator RotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(SaveGame)
+	float ZOffset = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float SideOffset = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float ForwardOffset = 0.0f;
+};
+
 USTRUCT()
 struct AUTORAILSUPPORTS_API FARSSettingsData
 {
 	GENERATED_BODY()
 
 	static constexpr int32 NumPillarSlots = 4;
+
+	static constexpr float MinTrackSeparation = 100.0f;
 
 	// master toggle
 	UPROPERTY(SaveGame)
@@ -16,6 +55,14 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	// combined blueprint
 	UPROPERTY(SaveGame)
 	bool bCombineIntoOneBlueprint = false;
+
+	// double rails
+	UPROPERTY(SaveGame)
+	bool bDoubleRails = false;
+
+	// track separation
+	UPROPERTY(SaveGame)
+	float TrackSeparation = 600.0f;
 
 	// under-rail blueprint
 	UPROPERTY(SaveGame)
@@ -44,6 +91,22 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	// forward/backward offset
 	UPROPERTY(SaveGame)
 	float UnderRailForwardOffset = 0.0f;
+
+	// under-rail side
+	UPROPERTY(SaveGame)
+	EARSSideMode UnderRailSideMode = EARSSideMode::BothMirrored;
+
+	// under-rail auto roll
+	UPROPERTY(SaveGame)
+	bool bUnderRailAutoRoll = false;
+
+	// split under-rail sides
+	UPROPERTY(SaveGame)
+	bool bSplitUnderRailSides = false;
+
+	// second track's under-rail
+	UPROPERTY(SaveGame)
+	FARSUnderRailSide UnderRailPartner;
 
 	// pillar blueprint
 	UPROPERTY(SaveGame)
@@ -80,6 +143,14 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	// pillar forward/backward offset
 	UPROPERTY(SaveGame)
 	TArray<float> PillarForwardOffsets;
+
+	// pillar side
+	UPROPERTY(SaveGame)
+	TArray<EARSSideMode> PillarSideModes;
+
+	// pillar auto roll
+	UPROPERTY(SaveGame)
+	TArray<bool> PillarAutoRoll;
 
 	FARSSettingsData()
 	{
@@ -124,6 +195,22 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 		{
 			PillarForwardOffsets.Add(0.0f);
 		}
+		while (PillarSideModes.Num() < NumPillarSlots)
+		{
+			PillarSideModes.Add(EARSSideMode::Center);
+		}
+		if (PillarAutoRoll.Num() < NumPillarSlots)
+		{
+			PillarAutoRoll.SetNum(NumPillarSlots);
+		}
+	}
+
+	static void ClampSideMode(EARSSideMode& Mode)
+	{
+		if (static_cast<uint8>(Mode) > static_cast<uint8>(EARSSideMode::RightOnly))
+		{
+			Mode = EARSSideMode::Center;
+		}
 	}
 
 	static void NormalizeRotation(FRotator& Rotation)
@@ -166,6 +253,28 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 		{
 			NormalizeRotation(Rotation);
 		}
+		const float SeparationMagnitude = FMath::Clamp(FMath::Abs(TrackSeparation), MinTrackSeparation, 10000.0f);
+		TrackSeparation = TrackSeparation < 0.0f ? -SeparationMagnitude : SeparationMagnitude;
+		ClampSideMode(UnderRailSideMode);
+		for (EARSSideMode& Mode : PillarSideModes)
+		{
+			ClampSideMode(Mode);
+		}
+		UnderRailPartner.Length = FMath::Clamp(UnderRailPartner.Length, 50.0f, 20000.0f);
+		UnderRailPartner.ZOffset = FMath::Clamp(UnderRailPartner.ZOffset, -10000.0f, 10000.0f);
+		UnderRailPartner.SideOffset = FMath::Clamp(UnderRailPartner.SideOffset, -10000.0f, 10000.0f);
+		UnderRailPartner.ForwardOffset = FMath::Clamp(UnderRailPartner.ForwardOffset, -10000.0f, 10000.0f);
+		NormalizeRotation(UnderRailPartner.RotationOffset);
+	}
+
+	void SeedPartnerFromUnderRail()
+	{
+		UnderRailPartner.Length = UnderRailLength;
+		UnderRailPartner.bCoverEndGap = bCoverEndGap;
+		UnderRailPartner.RotationOffset = UnderRailRotationOffset;
+		UnderRailPartner.ZOffset = UnderRailZOffset;
+		UnderRailPartner.SideOffset = UnderRailSideOffset;
+		UnderRailPartner.ForwardOffset = UnderRailForwardOffset;
 	}
 };
 
