@@ -561,7 +561,7 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
 		Slot.bAlignToRail = Data.PillarAlignToRail[SlotIndex];
 		Slot.Priority = SlotIndex; // slot 4 outranks slot 1 when both land on the same segment
 		Slot.bPreventOverlap = Data.PillarPreventOverlap[SlotIndex];
-		Slot.RotationOffset = Data.PillarRotationOffsets[SlotIndex];
+		Slot.RotationOffset = Data.GetPillarRotation(SlotIndex);
 		Slot.ZOffset = Data.PillarZOffsets[SlotIndex];
 		Slot.SideOffset = Data.PillarSideOffsets[SlotIndex];
 		Slot.ForwardOffset = Data.PillarForwardOffsets[SlotIndex];

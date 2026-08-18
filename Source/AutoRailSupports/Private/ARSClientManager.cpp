@@ -1159,13 +1159,21 @@ void AARSClientManager::ApplyRotate(float Sign)
 	if (!mARSModeActive) { return; }
 	if (GetCurrentSettingsMode() != EARSSettingsMode::General) { return; }
 	mWorking.EnsureSlotArraySizes();
-	FRotator& Rotation = (mSelectedPart == 0) ? mWorking.UnderRailRotationOffset : mWorking.PillarRotationOffsets[mSelectedPart - 1];
+	FRotator Rotation = (mSelectedPart == 0) ? mWorking.UnderRailRotationOffset : mWorking.GetPillarRotation(mSelectedPart - 1);
 	const float Delta = Sign * GetRotationStepDegrees();
 	switch (mRotationAxis)
 	{
 	case 1:  Rotation.Pitch += Delta; break;
 	case 2:  Rotation.Roll += Delta; break;
 	default: Rotation.Yaw += Delta; break;
+	}
+	if (mSelectedPart == 0)
+	{
+		mWorking.UnderRailRotationOffset = Rotation;
+	}
+	else
+	{
+		mWorking.SetPillarRotation(mSelectedPart - 1, Rotation);
 	}
 	SendWorkingSettings();
 }
@@ -1329,7 +1337,7 @@ void AARSClientManager::BuildSelectedSettingsRows(TArray<FARSInfoPanelRow>& OutR
 		AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowSpacingOffset", "Spacing Offset:"),
 			FText::AsNumber(mWorking.PillarSpacingOffsets[Slot]), Mode == EARSSettingsMode::SpacingOffset);
 		AddOffsetAndRotationRows(
-			mWorking.PillarRotationOffsets[Slot],
+			mWorking.GetPillarRotation(Slot),
 			FVector(mWorking.PillarForwardOffsets[Slot], mWorking.PillarSideOffsets[Slot], mWorking.PillarZOffsets[Slot]));
 	}
 }
