@@ -128,7 +128,11 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	UPROPERTY(SaveGame)
 	TArray<bool> PillarPreventOverlap;
 
-	// pillar rotation
+	// pillar rotation, 3 floats per slot: pitch, yaw, roll
+	UPROPERTY(SaveGame)
+	TArray<float> PillarRotations;
+
+	// pre-1.0.2 shape
 	UPROPERTY(SaveGame)
 	TArray<FRotator> PillarRotationOffsets;
 
@@ -179,10 +183,16 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 		{
 			PillarPreventOverlap.Add(true); // defaults on for every slot
 		}
-		while (PillarRotationOffsets.Num() < NumPillarSlots)
+		while (PillarRotations.Num() < NumPillarSlots * 3)
 		{
-			PillarRotationOffsets.Add(FRotator::ZeroRotator);
+			PillarRotations.Add(0.0f);
 		}
+		// whatever an old save or preset brought along
+		for (int32 i = 0; i < PillarRotationOffsets.Num() && i < NumPillarSlots; i++)
+		{
+			SetPillarRotation(i, PillarRotationOffsets[i]);
+		}
+		PillarRotationOffsets.Reset();
 		while (PillarZOffsets.Num() < NumPillarSlots)
 		{
 			PillarZOffsets.Add(0.0f);
@@ -211,6 +221,26 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 		{
 			Mode = EARSSideMode::Center;
 		}
+	}
+
+	FRotator GetPillarRotation(int32 Slot) const
+	{
+		const int32 Base = Slot * 3;
+		return PillarRotations.IsValidIndex(Base + 2)
+			? FRotator(PillarRotations[Base], PillarRotations[Base + 1], PillarRotations[Base + 2])
+			: FRotator::ZeroRotator;
+	}
+
+	void SetPillarRotation(int32 Slot, const FRotator& Rotation)
+	{
+		const int32 Base = Slot * 3;
+		if (!PillarRotations.IsValidIndex(Base + 2))
+		{
+			return;
+		}
+		PillarRotations[Base] = Rotation.Pitch;
+		PillarRotations[Base + 1] = Rotation.Yaw;
+		PillarRotations[Base + 2] = Rotation.Roll;
 	}
 
 	static void NormalizeRotation(FRotator& Rotation)
@@ -249,9 +279,11 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 			ForwardOffset = FMath::Clamp(ForwardOffset, -10000.0f, 10000.0f);
 		}
 		NormalizeRotation(UnderRailRotationOffset);
-		for (FRotator& Rotation : PillarRotationOffsets)
+		for (int32 i = 0; i < NumPillarSlots; i++)
 		{
+			FRotator Rotation = GetPillarRotation(i);
 			NormalizeRotation(Rotation);
+			SetPillarRotation(i, Rotation);
 		}
 		const float SeparationMagnitude = FMath::Clamp(FMath::Abs(TrackSeparation), MinTrackSeparation, 10000.0f);
 		TrackSeparation = TrackSeparation < 0.0f ? -SeparationMagnitude : SeparationMagnitude;

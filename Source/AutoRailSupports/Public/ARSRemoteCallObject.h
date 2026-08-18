@@ -45,7 +45,7 @@ public:
 	void Client_OpenUI();
 
 	UFUNCTION(Client, Reliable)
-	void Client_Notify(const FString& Message);
+	void Client_Notify(const FString& Message, bool bConfirmation);
 
 private:
 	FString GetSenderKey() const;

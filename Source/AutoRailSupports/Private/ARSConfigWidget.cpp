@@ -555,9 +555,10 @@ void UARSConfigWidget::PushWorkingToControls()
 		{
 			mPillarPriorityChecks[SlotIndex]->SetIsChecked(mWorking.PillarPreventOverlap[SlotIndex]);
 		}
-		SetSpin(mPillarYawSpins.IsValidIndex(SlotIndex) ? mPillarYawSpins[SlotIndex] : nullptr, mWorking.PillarRotationOffsets[SlotIndex].Yaw);
-		SetSpin(mPillarPitchSpins.IsValidIndex(SlotIndex) ? mPillarPitchSpins[SlotIndex] : nullptr, mWorking.PillarRotationOffsets[SlotIndex].Pitch);
-		SetSpin(mPillarRollSpins.IsValidIndex(SlotIndex) ? mPillarRollSpins[SlotIndex] : nullptr, mWorking.PillarRotationOffsets[SlotIndex].Roll);
+		const FRotator PillarRotation = mWorking.GetPillarRotation(SlotIndex);
+		SetSpin(mPillarYawSpins.IsValidIndex(SlotIndex) ? mPillarYawSpins[SlotIndex] : nullptr, PillarRotation.Yaw);
+		SetSpin(mPillarPitchSpins.IsValidIndex(SlotIndex) ? mPillarPitchSpins[SlotIndex] : nullptr, PillarRotation.Pitch);
+		SetSpin(mPillarRollSpins.IsValidIndex(SlotIndex) ? mPillarRollSpins[SlotIndex] : nullptr, PillarRotation.Roll);
 		SetSpin(mPillarVerticalSpins.IsValidIndex(SlotIndex) ? mPillarVerticalSpins[SlotIndex] : nullptr, mWorking.PillarZOffsets[SlotIndex] / 100.0f);
 		SetSpin(mPillarSidewaysSpins.IsValidIndex(SlotIndex) ? mPillarSidewaysSpins[SlotIndex] : nullptr, mWorking.PillarSideOffsets[SlotIndex] / 100.0f);
 		SetSpin(mPillarForwardSpins.IsValidIndex(SlotIndex) ? mPillarForwardSpins[SlotIndex] : nullptr, mWorking.PillarForwardOffsets[SlotIndex] / 100.0f);
@@ -928,7 +929,9 @@ void UARSConfigWidget::HandlePillarYawCommitted(int32 SlotIndex, float Value)
 {
 	if (bSuppressEvents) { return; }
 	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarRotationOffsets[SlotIndex].Yaw = Value;
+	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
+	Rotation.Yaw = Value;
+	mWorking.SetPillarRotation(SlotIndex, Rotation);
 	SendSettings();
 }
 
@@ -936,7 +939,9 @@ void UARSConfigWidget::HandlePillarPitchCommitted(int32 SlotIndex, float Value)
 {
 	if (bSuppressEvents) { return; }
 	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarRotationOffsets[SlotIndex].Pitch = Value;
+	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
+	Rotation.Pitch = Value;
+	mWorking.SetPillarRotation(SlotIndex, Rotation);
 	SendSettings();
 }
 
@@ -944,7 +949,9 @@ void UARSConfigWidget::HandlePillarRollCommitted(int32 SlotIndex, float Value)
 {
 	if (bSuppressEvents) { return; }
 	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarRotationOffsets[SlotIndex].Roll = Value;
+	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
+	Rotation.Roll = Value;
+	mWorking.SetPillarRotation(SlotIndex, Rotation);
 	SendSettings();
 }
 

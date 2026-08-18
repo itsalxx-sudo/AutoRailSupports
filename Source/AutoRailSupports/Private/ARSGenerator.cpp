@@ -13,6 +13,7 @@
 #include "FGInventoryLibrary.h"
 #include "FGPlayerState.h"
 #include "FGRailroadTrackConnectionComponent.h"
+#include "Buildables/FGBuildableBlueprintDesigner.h"
 #include "Buildables/FGBuildableRailroadTrack.h"
 #include "AbstractInstanceInterface.h"
 #include "AbstractInstanceManager.h"
@@ -381,25 +382,41 @@ void FARSGenerator::PlanChain(const TArray<FARSChainSegment>& Chain, const FARSS
 		return;
 	}
 	const float TotalLength = Chain.Last().StartDistance + Chain.Last().Length;
+	const int32 FirstJob = OutJobs.Num();
 	FARSPathSampler SourceSampler = [&Chain](float Distance, FVector& OutLocation, FVector& OutDirection)
 	{
 		SampleChain(Chain, Distance, OutLocation, OutDirection);
 	};
 
+	USplineComponent* MirrorSpline = nullptr;
 	if (Settings.bDoubleRails)
 	{
 		TArray<FARSCurvePoint> Points;
 		TArray<FARSCurvePoint> Offset;
 		FARSCurve::ReadChainPoints(Chain, Points);
 		FARSCurve::OffsetPoints(Points, Settings.TrackSeparation, Offset);
-		if (USplineComponent* MirrorSpline = FARSCurve::MakeScratchSpline(Offset))
-		{
-			PlanDoublePath({ SourceSampler, TotalLength }, MakeSplineCurve(MirrorSpline),
-				Settings, Payer, BatchId, OutJobs);
-			return;
-		}
+		MirrorSpline = FARSCurve::MakeScratchSpline(Offset);
 	}
-	PlanPath(SourceSampler, TotalLength, Settings, Payer, BatchId, OutJobs);
+
+	if (MirrorSpline)
+	{
+		PlanDoublePath({ SourceSampler, TotalLength }, MakeSplineCurve(MirrorSpline),
+			Settings, Payer, BatchId, OutJobs);
+	}
+	else
+	{
+		PlanPath(SourceSampler, TotalLength, Settings, Payer, BatchId, OutJobs);
+	}
+
+	AFGBuildableBlueprintDesigner* Designer = Chain[0].Track ? Chain[0].Track->GetBlueprintDesigner() : nullptr;
+	if (!Designer)
+	{
+		return;
+	}
+	for (int32 i = FirstJob; i < OutJobs.Num(); i++)
+	{
+		OutJobs[i].Designer = Designer;
+	}
 }
 
 void FARSGenerator::PlanPath(const FARSPathSampler& Sampler, float TotalLength, const FARSSettings& Settings,
@@ -942,12 +959,14 @@ bool FARSGenerator::ExecuteStampJob(UWorld* World, const FARSStampJob& Job, AFGB
 		}
 	}
 
+	AFGBuildableBlueprintDesigner* Designer = Job.Designer.Get();
+
 	AFGBlueprintProxy* Proxy = nullptr;
 	if (Job.bCombineIntoOneBlueprint && InOutSharedProxy)
 	{
 		Proxy = InOutSharedProxy;
 	}
-	else
+	else if (!Designer)
 	{
 		Proxy = World->SpawnActorDeferred<AFGBlueprintProxy>(
 			AFGBlueprintProxy::StaticClass(), Job.Transform, nullptr, Payer,
@@ -980,9 +999,17 @@ bool FARSGenerator::ExecuteStampJob(UWorld* World, const FARSStampJob& Job, AFGB
 
 	TArray<AFGBuildable*> SpawnedBuildables;
 	BlueprintSubsystem->LoadStoredBlueprint(Descriptor, Job.Transform, SpawnedBuildables,
-		/*useBlueprintWorld*/ false, /*designer*/ nullptr, Payer, Proxy);
+		/*useBlueprintWorld*/ false, Designer, Payer, Proxy);
 
-	if (SpawnedBuildables.Num() == 0 && !Proxy->GetLightweightClassAndIndices().Num())
+	if (Designer)
+	{
+		for (AFGBuildable* Buildable : SpawnedBuildables)
+		{
+			Designer->OnBuildableConstructedInsideDesigner(Buildable);
+		}
+	}
+
+	if (SpawnedBuildables.Num() == 0 && (!Proxy || !Proxy->GetLightweightClassAndIndices().Num()))
 	{
 		UE_LOG(LogARSGenerator, Warning, TEXT("LoadStoredBlueprint spawned nothing for '%s'"), *Descriptor->GetBlueprintNameAsString());
 	}

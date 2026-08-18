@@ -263,7 +263,7 @@ void AARSSubsystem::OnBuildableConstructed(AFGBuildable* Buildable)
 	{
 		return;
 	}
-	if (Track->GetBlueprintProxy() != nullptr || Track->IsBuildableInsideBlueprintDesigner() || Track->GetIsOwnedByPlatform())
+	if (Track->GetBlueprintProxy() != nullptr || Track->GetIsOwnedByPlatform())
 	{
 		return;
 	}
@@ -569,7 +569,7 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
 		Slot.bAutoRoll = Data.PillarAutoRoll[SlotIndex];
 		Slot.Priority = SlotIndex; // slot 4 outranks slot 1 when both land on the same segment
 		Slot.bPreventOverlap = Data.PillarPreventOverlap[SlotIndex];
-		Slot.RotationOffset = Data.PillarRotationOffsets[SlotIndex];
+		Slot.RotationOffset = Data.GetPillarRotation(SlotIndex);
 		Slot.ZOffset = Data.PillarZOffsets[SlotIndex];
 		Slot.SideOffset = Data.PillarSideOffsets[SlotIndex];
 		Slot.ForwardOffset = Data.PillarForwardOffsets[SlotIndex];
@@ -606,7 +606,7 @@ void AARSSubsystem::SendPlayerChatMessage(AFGCharacterPlayer* Player, const FStr
 	{
 		if (UARSRemoteCallObject* RCO = PlayerController->GetRemoteCallObjectOfClass<UARSRemoteCallObject>())
 		{
-			RCO->Client_Notify(Message);
+			RCO->Client_Notify(Message, /*bConfirmation*/ false);
 		}
 	}
 }

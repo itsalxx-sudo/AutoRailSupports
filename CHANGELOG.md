@@ -18,6 +18,19 @@ All notable changes to Auto Rail Supports are documented here.
 - Blueprints now anchor by the middle of their own contents rather than the Blueprint Designer
   origin.
 
+## [1.0.2]
+
+### Added
+
+- Chat confirmations can now be turned off, under Main Menu -> Mods -> Auto Rail Supports.
+
+### Fixed
+
+- Supports built inside a Blueprint Designer are now part of that blueprint.
+- Fixed save compatibility with the Satisfactory Calculator interactive map.
+
+[1.0.2]: https://github.com/itsalxx-sudo/AutoRailSupports/releases/tag/v1.0.2
+
 ## [1.0.1]
 - Fixed game crash on 1.2.4 dedicated servers running CL#491125 ARS build - Rebuilt for 1.2.4.
 
