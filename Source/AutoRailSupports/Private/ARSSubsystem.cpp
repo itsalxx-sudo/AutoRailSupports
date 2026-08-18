@@ -263,7 +263,7 @@ void AARSSubsystem::OnBuildableConstructed(AFGBuildable* Buildable)
 	{
 		return;
 	}
-	if (Track->GetBlueprintProxy() != nullptr || Track->IsBuildableInsideBlueprintDesigner() || Track->GetIsOwnedByPlatform())
+	if (Track->GetBlueprintProxy() != nullptr || Track->GetIsOwnedByPlatform())
 	{
 		return;
 	}

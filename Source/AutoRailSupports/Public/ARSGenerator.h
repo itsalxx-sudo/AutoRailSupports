@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 
 class AFGBlueprintProxy;
+class AFGBuildableBlueprintDesigner;
 class AFGBuildableRailroadTrack;
 class AFGCharacterPlayer;
 class UFGBlueprintDescriptor;
@@ -50,6 +51,7 @@ struct FARSStampJob
 	FBox LocalBounds = FBox(ForceInit);
 	uint64 BatchId = 0;
 	bool bCombineIntoOneBlueprint = false;
+	TWeakObjectPtr<AFGBuildableBlueprintDesigner> Designer;
 };
 
 struct FARSPreviewPiece
