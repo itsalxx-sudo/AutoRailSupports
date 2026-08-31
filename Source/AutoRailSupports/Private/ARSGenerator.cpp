@@ -135,9 +135,9 @@ namespace
 		return Plan;
 	}
 
-	bool WantsEndGapStamp(const FARSStationPlan& Plan, const FARSSettings& Settings, bool bCoverEndGap)
+	bool WantsEndGapStamp(const FARSStationPlan& Plan, bool bCoverEndGap)
 	{
-		return bCoverEndGap && Settings.UnderRailDescriptor
+		return bCoverEndGap
 			&& !Plan.bTrailingTileOverhangs && Plan.Remainder > 1.0f && Plan.Count < MaxStampsPerChain;
 	}
 
@@ -145,7 +145,7 @@ namespace
 	{
 		UFGBlueprintDescriptor* Descriptor = nullptr;
 		FBox LocalBounds = FBox(ForceInit);
-		int32 PartIndex = 0;
+		int32 PartIndex = INDEX_NONE;
 		FRotator RotationOffset = FRotator::ZeroRotator;
 		float ZOffset = 0.0f;
 		float SideOffset = 0.0f;
@@ -201,6 +201,8 @@ namespace
 		if (bPartner && Settings.bSplitUnderRailSides)
 		{
 			const FARSUnderRailSide& Side = Settings.PartnerUnderRail;
+			Values.Params.Descriptor = Settings.PartnerUnderRailDescriptor;
+			Values.Params.LocalBounds = Settings.PartnerUnderRailLocalBounds;
 			Values.Params.RotationOffset = Side.RotationOffset;
 			Values.Params.ZOffset = Side.ZOffset;
 			Values.Params.SideOffset = Side.SideOffset;
@@ -223,7 +225,7 @@ namespace
 		FARSStampParams Params;
 		Params.Descriptor = Slot.Descriptor;
 		Params.LocalBounds = Slot.LocalBounds;
-		Params.PartIndex = Slot.Priority + 1;
+		Params.PartIndex = Slot.SlotIndex;
 		Params.RotationOffset = Slot.RotationOffset;
 		Params.ZOffset = Slot.ZOffset;
 		Params.SideOffset = Slot.SideOffset;
@@ -249,6 +251,39 @@ namespace
 	bool SlotIsSuppressed(const FARSPillarSlot& Slot, int32 TopPriority)
 	{
 		return Slot.bPreventOverlap && Slot.Priority < TopPriority;
+	}
+
+	//LANES
+	namespace EARSLane
+	{
+		constexpr uint8 Center = 1 << 0;
+		constexpr uint8 Left   = 1 << 1;
+		constexpr uint8 Right  = 1 << 2;
+	}
+
+	uint8 LanesFor(EARSSideMode Mode)
+	{
+		switch (Mode)
+		{
+		case EARSSideMode::BothMirrored:
+		case EARSSideMode::BothSameFacing: return EARSLane::Left | EARSLane::Right;
+		case EARSSideMode::LeftOnly:       return EARSLane::Left;
+		case EARSSideMode::RightOnly:      return EARSLane::Right;
+		default:                           return EARSLane::Center;
+		}
+	}
+
+	uint8 LanesClaimedAbove(const FARSSettings& Settings, int32 Index, int32 Priority)
+	{
+		uint8 Claimed = 0;
+		for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
+		{
+			if (PillarSlot.Priority > Priority && SlotStampsAt(PillarSlot, Index))
+			{
+				Claimed |= LanesFor(PillarSlot.SideMode);
+			}
+		}
+		return Claimed;
 	}
 }
 
@@ -440,7 +475,7 @@ void FARSGenerator::PlanPath(const FARSPathSampler& Sampler, float TotalLength, 
 		}
 
 		const FARSStationBasis Basis = SampleBasis(Sampler, Plan.DistanceAt(Index));
-		if (Settings.UnderRailDescriptor)
+		if (UnderRail.Params.Descriptor)
 		{
 			EmitStamp(Basis, UnderRail.Params, Settings, Payer, BatchId, OutJobs);
 		}
@@ -453,7 +488,7 @@ void FARSGenerator::PlanPath(const FARSPathSampler& Sampler, float TotalLength, 
 		}
 	}
 
-	if (WantsEndGapStamp(Plan, Settings, UnderRail.bCoverEndGap))
+	if (UnderRail.Params.Descriptor && WantsEndGapStamp(Plan, UnderRail.bCoverEndGap))
 	{
 		EmitStamp(SampleBasis(Sampler, TotalLength), UnderRail.Params, Settings, Payer, BatchId, OutJobs);
 	}
@@ -463,8 +498,10 @@ void FARSGenerator::PlanDoublePath(const FARSPathCurve& Source, const FARSPathCu
                                    AFGCharacterPlayer* Payer, uint64 BatchId, TArray<FARSStampJob>& OutJobs)
 {
 	ARS_SCOPE_PERF(PlanPath);
+	const bool bAnyUnderRail = Settings.UnderRailDescriptor
+		|| (Settings.bSplitUnderRailSides && Settings.PartnerUnderRailDescriptor);
 	if (Source.Length <= 0.0f || Mirror.Length <= 0.0f
-		|| (!Settings.UnderRailDescriptor && Settings.PillarSlots.Num() == 0))
+		|| (!bAnyUnderRail && Settings.PillarSlots.Num() == 0))
 	{
 		return;
 	}
@@ -532,17 +569,17 @@ void FARSGenerator::PlanDoublePath(const FARSPathCurve& Source, const FARSPathCu
 		{
 			Distances.Add(Plan.DistanceAt(Index));
 		}
-		if (WantsEndGapStamp(Plan, Settings, Values.bCoverEndGap))
+		if (WantsEndGapStamp(Plan, Values.bCoverEndGap))
 		{
 			Distances.Add(CurveLength);
 		}
 	};
 
-	if (Settings.UnderRailDescriptor)
+	if (Settings.UnderRailSideMode == EARSSideMode::Center)
 	{
-		if (Settings.UnderRailSideMode == EARSSideMode::Center)
+		FARSUnderRailValues Values = UnderRailValuesFor(Settings, /*bPartner*/ false);
+		if (Values.Params.Descriptor)
 		{
-			FARSUnderRailValues Values = UnderRailValuesFor(Settings, /*bPartner*/ false);
 			CollectDistances(Source.Length, Values);
 			for (const float Distance : Distances)
 			{
@@ -551,20 +588,24 @@ void FARSGenerator::PlanDoublePath(const FARSPathCurve& Source, const FARSPathCu
 				EmitStamp(AnchorBasis(Fraction), Values.Params, Settings, Payer, BatchId, OutJobs);
 			}
 		}
-		else
+	}
+	else
+	{
+		ForEachSide(Settings.UnderRailSideMode, [&](const FARSTrackSide& Side, bool bMirrored)
 		{
-			ForEachSide(Settings.UnderRailSideMode, [&](const FARSTrackSide& Side, bool bMirrored)
+			FARSUnderRailValues Values = UnderRailValuesFor(Settings, Side.bIsPartner);
+			if (!Values.Params.Descriptor)
 			{
-				FARSUnderRailValues Values = UnderRailValuesFor(Settings, Side.bIsPartner);
-				Values.Params.bMirrored = bMirrored;
-				Values.Params.OutwardSign = OutwardSignFor(Side);
-				CollectDistances(Side.Curve->Length, Values);
-				for (const float Distance : Distances)
-				{
-					EmitStamp(SampleBasis(Side.Curve->Sampler, Distance), Values.Params, Settings, Payer, BatchId, OutJobs);
-				}
-			});
-		}
+				return;
+			}
+			Values.Params.bMirrored = bMirrored;
+			Values.Params.OutwardSign = OutwardSignFor(Side);
+			CollectDistances(Side.Curve->Length, Values);
+			for (const float Distance : Distances)
+			{
+				EmitStamp(SampleBasis(Side.Curve->Sampler, Distance), Values.Params, Settings, Payer, BatchId, OutJobs);
+			}
+		});
 	}
 
 	const FARSStationPlan SourcePlan = PlanStations(Source.Length, Step);
@@ -579,20 +620,30 @@ void FARSGenerator::PlanDoublePath(const FARSPathCurve& Source, const FARSPathCu
 
 		for (const FARSPillarSlot& PillarSlot : Settings.PillarSlots)
 		{
-			if (!SlotStampsAt(PillarSlot, Index) || SlotIsSuppressed(PillarSlot, TopPriority))
+			if (!SlotStampsAt(PillarSlot, Index))
 			{
 				continue;
 			}
+			const uint8 Blocked = PillarSlot.bPreventOverlap
+				? LanesClaimedAbove(Settings, Index, PillarSlot.Priority) : 0;
 			FARSStampParams Params = PillarParams(PillarSlot);
 
 			if (PillarSlot.SideMode == EARSSideMode::Center)
 			{
+				if (Blocked & EARSLane::Center)
+				{
+					continue;
+				}
 				Params.RollDegrees = PillarSlot.bAutoRoll ? RollAt(Fraction) : 0.0f;
 				EmitStamp(AnchorBasis(Fraction), Params, Settings, Payer, BatchId, OutJobs);
 				continue;
 			}
 			ForEachSide(PillarSlot.SideMode, [&](const FARSTrackSide& Side, bool bMirrored)
 			{
+				if (Blocked & (Side.bIsLeft ? EARSLane::Left : EARSLane::Right))
+				{
+					return;
+				}
 				Params.bMirrored = bMirrored;
 				Params.OutwardSign = OutwardSignFor(Side);
 				Params.bPartnerSide = Side.bIsPartner;

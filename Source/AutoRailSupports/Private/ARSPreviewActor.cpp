@@ -127,26 +127,22 @@ void AARSPreviewActor::UpdateFromTrack(AFGBuildableRailroadTrack* Track, const F
 	RebuildFromSpline(Spline, SettingsData, static_cast<uint8>(EOutlineColor::OC_HOLOGRAM), bCollectAnchors);
 }
 
-bool AARSPreviewActor::GetClosestStampTransform(int32 PartIndex, const FVector& From, FTransform& OutTransform,
-                                                bool* OutPartnerSide) const
+bool AARSPreviewActor::GetClosestStampTransform(int32 PartIndex, bool bPartnerSide, bool bSideMatters,
+                                                const FVector& From, FTransform& OutTransform) const
 {
-	float BestDistSq = TNumericLimits<float>::Max();
+	double BestDistSq = TNumericLimits<double>::Max();
 	bool bFound = false;
 	for (const FARSStampAnchor& Anchor : mStampAnchors)
 	{
-		if (Anchor.PartIndex != PartIndex)
+		if (Anchor.PartIndex != PartIndex || (bSideMatters && Anchor.bPartnerSide != bPartnerSide))
 		{
 			continue;
 		}
-		const float DistSq = FVector::DistSquared(Anchor.Transform.GetLocation(), From);
+		const double DistSq = FVector::DistSquared(Anchor.Transform.GetLocation(), From);
 		if (DistSq < BestDistSq)
 		{
 			BestDistSq = DistSq;
 			OutTransform = Anchor.Transform;
-			if (OutPartnerSide)
-			{
-				*OutPartnerSide = Anchor.bPartnerSide;
-			}
 			bFound = true;
 		}
 	}
@@ -183,7 +179,7 @@ void AARSPreviewActor::RebuildFromSpline(USplineComponent* Spline, const FARSSet
 		},
 		nullptr);
 
-	if (!Settings.UnderRailDescriptor && Settings.PillarSlots.Num() == 0)
+	if (!Settings.UnderRailDescriptor && !Settings.PartnerUnderRailDescriptor && Settings.PillarSlots.Num() == 0)
 	{
 		return;
 	}

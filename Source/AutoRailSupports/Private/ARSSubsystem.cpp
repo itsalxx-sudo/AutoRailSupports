@@ -13,9 +13,13 @@
 #include "Buildables/FGBuildable.h"
 #include "Buildables/FGBuildableRailroadTrack.h"
 #include "Subsystem/SubsystemActorManager.h"
+#include "SessionSettings/SessionSettingsManager.h"
+#include "Settings/FGUserSettingApplyType.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
+
+static const TCHAR* ARSMaxPillarSlotsSettingId = TEXT("AutoRailSupports.MaxPillarSlots");
 
 AARSSubsystem::AARSSubsystem()
 {
@@ -39,10 +43,10 @@ AARSSubsystem* AARSSubsystem::Get(UWorld* World)
 
 void AARSSubsystem::PostLoadGame_Implementation(int32 saveVersion, int32 gameVersion)
 {
-	mSettings.EnsureSlotArraySizes();
+	mSettings.Normalize();
 	for (TPair<FString, FARSSettingsData>& Entry : mPlayerSettings)
 	{
-		Entry.Value.EnsureSlotArraySizes();
+		Entry.Value.Normalize();
 	}
 }
 
@@ -84,7 +88,7 @@ void AARSSubsystem::BeginPlay()
 
 	if (HasAuthority())
 	{
-		mSettings.EnsureSlotArraySizes();
+		mSettings.Normalize();
 		TryBindConstructionDelegate();
 	}
 
@@ -167,6 +171,7 @@ void AARSSubsystem::ApplySettingsFor(const FString& UserId, const FARSSettingsDa
 	}
 	FARSSettingsData& Stored = mPlayerSettings.Add(UserId, NewSettings);
 	Stored.ClampValues();
+	Stored.ClampPillarSlotsTo(GetMaxPillarSlots(this));
 	// so an adjustment shows up for whoever is watching this player place
 	RefreshPreviewSettings(UserId);
 }
@@ -504,7 +509,8 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
                                                 const FARSMeasureFn& Measure, TArray<FString>* OutWarnings)
 {
 	ARS_SCOPE_PERF(ResolveSettings);
-	Data.EnsureSlotArraySizes();
+	Data.Normalize();
+	Data.ClampPillarSlotsTo(GetMaxPillarSlots(BlueprintSubsystem));
 
 	FARSSettings Settings;
 	Settings.UnderRailLength = FMath::Clamp(Data.UnderRailLength, 50.0f, 20000.0f);
@@ -530,52 +536,85 @@ FARSSettings AARSSubsystem::ResolveSettingsFrom(FARSSettingsData Data, AFGBluepr
 		return Settings;
 	}
 
-	if (!Data.UnderRailBlueprintName.IsEmpty())
+	auto ResolveUnderRail = [&](bool bPartner, UFGBlueprintDescriptor*& OutDescriptor, FBox& OutBounds)
 	{
-		Settings.UnderRailDescriptor = BlueprintSubsystem->GetBlueprintDescriptorByNameString(Data.UnderRailBlueprintName);
-		if (Settings.UnderRailDescriptor)
+		const FString Name = Data.GetUnderRailSide(bPartner).BlueprintName;
+		if (Name.IsEmpty())
+		{
+			return;
+		}
+		OutDescriptor = BlueprintSubsystem->GetBlueprintDescriptorByNameString(Name);
+		if (OutDescriptor)
 		{
 			// measured bounds drive the top-at-rail anchoring and the dismantle outline
-			Measure(Settings.UnderRailDescriptor, Settings.UnderRailLocalBounds);
+			Measure(OutDescriptor, OutBounds);
 		}
 		else if (OutWarnings)
 		{
-			OutWarnings->Add(FString::Printf(TEXT("under-rail blueprint '%s' not found, slot disabled."), *Data.UnderRailBlueprintName));
+			OutWarnings->Add(FString::Printf(TEXT("under-rail blueprint '%s' not found, slot disabled."), *Name));
 		}
+	};
+	ResolveUnderRail(/*bPartner*/ false, Settings.UnderRailDescriptor, Settings.UnderRailLocalBounds);
+	if (Data.HasSplitUnderRailSides())
+	{
+		ResolveUnderRail(/*bPartner*/ true, Settings.PartnerUnderRailDescriptor, Settings.PartnerUnderRailLocalBounds);
 	}
 
-	for (int32 SlotIndex = 0; SlotIndex < FARSSettingsData::NumPillarSlots; SlotIndex++)
+	const int32 NumSlots = Data.NumPillarSlots();
+	for (int32 SlotIndex = 0; SlotIndex < NumSlots; SlotIndex++)
 	{
-		const FString& PillarName = Data.PillarBlueprintNames[SlotIndex];
-		if (PillarName.IsEmpty())
+		const FARSPillarSlotData& SlotData = Data.PillarSlots[SlotIndex];
+		if (SlotData.BlueprintName.IsEmpty())
 		{
 			continue;
 		}
-		UFGBlueprintDescriptor* Descriptor = BlueprintSubsystem->GetBlueprintDescriptorByNameString(PillarName);
+		UFGBlueprintDescriptor* Descriptor = BlueprintSubsystem->GetBlueprintDescriptorByNameString(SlotData.BlueprintName);
 		if (!Descriptor)
 		{
 			if (OutWarnings)
 			{
-				OutWarnings->Add(FString::Printf(TEXT("pillar %d blueprint '%s' not found, slot disabled."), SlotIndex + 1, *PillarName));
+				OutWarnings->Add(FString::Printf(TEXT("pillar %d blueprint '%s' not found, slot disabled."), SlotIndex + 1, *SlotData.BlueprintName));
 			}
 			continue;
 		}
 		FARSPillarSlot& Slot = Settings.PillarSlots.AddDefaulted_GetRef();
 		Slot.Descriptor = Descriptor;
-		Slot.EveryN = FMath::Max(1, Data.PillarEveryNs[SlotIndex]);
-		Slot.SpacingOffset = FMath::Max(0, Data.PillarSpacingOffsets[SlotIndex]);
-		Slot.bAlignToRail = Data.PillarAlignToRail[SlotIndex];
-		Slot.SideMode = Data.PillarSideModes[SlotIndex];
-		Slot.bAutoRoll = Data.PillarAutoRoll[SlotIndex];
-		Slot.Priority = SlotIndex; // slot 4 outranks slot 1 when both land on the same segment
-		Slot.bPreventOverlap = Data.PillarPreventOverlap[SlotIndex];
-		Slot.RotationOffset = Data.GetPillarRotation(SlotIndex);
-		Slot.ZOffset = Data.PillarZOffsets[SlotIndex];
-		Slot.SideOffset = Data.PillarSideOffsets[SlotIndex];
-		Slot.ForwardOffset = Data.PillarForwardOffsets[SlotIndex];
+		Slot.SlotIndex = SlotIndex;
+		Slot.EveryN = FMath::Max(1, SlotData.EveryN);
+		Slot.SpacingOffset = FMath::Max(0, SlotData.SpacingOffset);
+		Slot.bAlignToRail = SlotData.bAlignToRail;
+		Slot.SideMode = SlotData.SideMode;
+		Slot.bAutoRoll = SlotData.bAutoRoll;
+		Slot.Priority = NumSlots - 1 - SlotIndex;
+		Slot.bPreventOverlap = SlotData.bPreventOverlap;
+		Slot.RotationOffset = SlotData.GetRotation();
+		Slot.ZOffset = SlotData.ZOffset;
+		Slot.SideOffset = SlotData.SideOffset;
+		Slot.ForwardOffset = SlotData.ForwardOffset;
 		Measure(Descriptor, Slot.LocalBounds);
 	}
 	return Settings;
+}
+
+int32 AARSSubsystem::GetMaxPillarSlots(const UObject* WorldContext)
+{
+	const UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
+	const USessionSettingsManager* Manager = World ? World->GetSubsystem<USessionSettingsManager>() : nullptr;
+	const UFGUserSettingApplyType* Setting = Manager ? Manager->FindUserSetting(ARSMaxPillarSlotsSettingId) : nullptr;
+	if (!Setting)
+	{
+		return FARSSettingsData::DefaultMaxPillarSlots;
+	}
+	const FVariant Value = Setting->GetAppliedValue();
+	if (Value.GetType() == EVariantTypes::Float)
+	{
+		return FARSSettingsData::ClampPillarSlotLimit(FMath::RoundToInt(Value.GetValue<float>()));
+	}
+	if (Value.GetType() == EVariantTypes::Int32)
+	{
+		return FARSSettingsData::ClampPillarSlotLimit(Value.GetValue<int32>());
+	}
+	return FARSSettingsData::DefaultMaxPillarSlots;
 }
 
 bool AARSSubsystem::ShouldWarnStampCount(float UnderRailLengthCm, float BlueprintLengthMeters)

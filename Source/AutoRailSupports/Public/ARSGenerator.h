@@ -14,6 +14,7 @@ constexpr float ARSDimensionUnitMeters = 0.8f;
 struct FARSPillarSlot
 {
 	UFGBlueprintDescriptor* Descriptor = nullptr;
+	int32 SlotIndex = 0;
 	int32 EveryN = 4;
 	int32 SpacingOffset = 0;
 	int32 Priority = 0;
@@ -51,13 +52,16 @@ struct FARSSettings
 	bool bUnderRailAutoRoll = false;
 	bool bSplitUnderRailSides = false;
 	FARSUnderRailSide PartnerUnderRail;
+	UFGBlueprintDescriptor* PartnerUnderRailDescriptor = nullptr;
+	FBox PartnerUnderRailLocalBounds = FBox(ForceInit);
 };
 
 struct FARSStampJob
 {
 	TWeakObjectPtr<UFGBlueprintDescriptor> Descriptor;
 	FTransform Transform;
-	int32 PartIndex = 0;
+	// INDEX_NONE for the under-rail, otherwise the pillar slots position in the list
+	int32 PartIndex = INDEX_NONE;
 	// sits on the second track rather than the rail being placed
 	bool bPartnerSide = false;
 	TWeakObjectPtr<AFGCharacterPlayer> Payer;

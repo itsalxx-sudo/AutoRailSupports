@@ -35,12 +35,12 @@ public:
 
 	struct FARSStampAnchor
 	{
-		int32 PartIndex = 0;
+		int32 PartIndex = INDEX_NONE;
 		bool bPartnerSide = false;
 		FTransform Transform;
 	};
-	bool GetClosestStampTransform(int32 PartIndex, const FVector& From, FTransform& OutTransform,
-	                              bool* OutPartnerSide = nullptr) const;
+	bool GetClosestStampTransform(int32 PartIndex, bool bPartnerSide, bool bSideMatters,
+	                              const FVector& From, FTransform& OutTransform) const;
 
 private:
 	void RebuildFromSpline(USplineComponent* Spline, const FARSSettingsData& SettingsData, uint8 Stencil, bool bCollectAnchors);

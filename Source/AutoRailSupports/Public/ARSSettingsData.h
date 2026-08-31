@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "Algo/Reverse.h"
 #include "ARSSettingsData.generated.h"
 
 UENUM()
@@ -21,6 +22,9 @@ struct AUTORAILSUPPORTS_API FARSUnderRailSide
 	GENERATED_BODY()
 
 	UPROPERTY(SaveGame)
+	FString BlueprintName;
+
+	UPROPERTY(SaveGame)
 	float Length = 800.0f;
 
 	UPROPERTY(SaveGame)
@@ -40,13 +44,77 @@ struct AUTORAILSUPPORTS_API FARSUnderRailSide
 };
 
 USTRUCT()
+struct AUTORAILSUPPORTS_API FARSPillarSlotData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(SaveGame)
+	FString BlueprintName;
+
+	UPROPERTY(SaveGame)
+	int32 EveryN = 4;
+
+	UPROPERTY(SaveGame)
+	int32 SpacingOffset = 0;
+
+	UPROPERTY(SaveGame)
+	bool bAlignToRail = false;
+
+	UPROPERTY(SaveGame)
+	bool bPreventOverlap = true;
+
+	UPROPERTY(SaveGame)
+	bool bAutoRoll = false;
+
+	UPROPERTY(SaveGame)
+	bool bExpanded = false;
+
+	UPROPERTY(SaveGame)
+	EARSSideMode SideMode = EARSSideMode::Center;
+
+	UPROPERTY(SaveGame)
+	float RotationPitch = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float RotationYaw = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float RotationRoll = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float ZOffset = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float SideOffset = 0.0f;
+
+	UPROPERTY(SaveGame)
+	float ForwardOffset = 0.0f;
+
+	FRotator GetRotation() const { return FRotator(RotationPitch, RotationYaw, RotationRoll); }
+
+	void SetRotation(const FRotator& Rotation)
+	{
+		RotationPitch = Rotation.Pitch;
+		RotationYaw = Rotation.Yaw;
+		RotationRoll = Rotation.Roll;
+	}
+};
+
+USTRUCT()
 struct AUTORAILSUPPORTS_API FARSSettingsData
 {
 	GENERATED_BODY()
 
-	static constexpr int32 NumPillarSlots = 4;
+	static constexpr int32 MaxPillarSlots = 100;
+
+	static constexpr int32 DefaultMaxPillarSlots = 32;
 
 	static constexpr float MinTrackSeparation = 100.0f;
+
+	static constexpr int32 CurrentVersion = 1;
+
+	UPROPERTY(SaveGame)
+	int32 Version = 0;
 
 	// master toggle
 	UPROPERTY(SaveGame)
@@ -108,112 +176,121 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	UPROPERTY(SaveGame)
 	FARSUnderRailSide UnderRailPartner;
 
-	// pillar blueprint
+	// pillar slots, highest priority first
 	UPROPERTY(SaveGame)
-	TArray<FString> PillarBlueprintNames;
+	TArray<FARSPillarSlotData> PillarSlots;
 
-	// pillar spacing
-	UPROPERTY(SaveGame)
-	TArray<int32> PillarEveryNs;
+	//pre-1.1
+	UPROPERTY(SaveGame) TArray<FString> PillarBlueprintNames;
+	UPROPERTY(SaveGame) TArray<int32> PillarEveryNs;
+	UPROPERTY(SaveGame) TArray<int32> PillarSpacingOffsets;
+	UPROPERTY(SaveGame) TArray<bool> PillarAlignToRail;
+	UPROPERTY(SaveGame) TArray<bool> PillarPreventOverlap;
+	UPROPERTY(SaveGame) TArray<float> PillarRotations;
+	UPROPERTY(SaveGame) TArray<FRotator> PillarRotationOffsets;
+	UPROPERTY(SaveGame) TArray<float> PillarZOffsets;
+	UPROPERTY(SaveGame) TArray<float> PillarSideOffsets;
+	UPROPERTY(SaveGame) TArray<float> PillarForwardOffsets;
+	UPROPERTY(SaveGame) TArray<EARSSideMode> PillarSideModes;
+	UPROPERTY(SaveGame) TArray<bool> PillarAutoRoll;
 
-	// spacing offset
-	UPROPERTY(SaveGame)
-	TArray<int32> PillarSpacingOffsets;
+	int32 NumPillarSlots() const { return PillarSlots.Num(); }
 
-	// follow incline
-	UPROPERTY(SaveGame)
-	TArray<bool> PillarAlignToRail;
+	static int32 ClampPillarSlotLimit(int32 Limit) { return FMath::Clamp(Limit, 1, MaxPillarSlots); }
 
-	// prevent overlap
-	UPROPERTY(SaveGame)
-	TArray<bool> PillarPreventOverlap;
+	bool CanAddPillarSlot(int32 Limit) const { return PillarSlots.Num() < ClampPillarSlotLimit(Limit); }
 
-	// pillar rotation, 3 floats per slot: pitch, yaw, roll
-	UPROPERTY(SaveGame)
-	TArray<float> PillarRotations;
-
-	// pre-1.0.2 shape
-	UPROPERTY(SaveGame)
-	TArray<FRotator> PillarRotationOffsets;
-
-	// pillar vertical offset
-	UPROPERTY(SaveGame)
-	TArray<float> PillarZOffsets;
-
-	// pillar perpendicular offset
-	UPROPERTY(SaveGame)
-	TArray<float> PillarSideOffsets;
-
-	// pillar forward/backward offset
-	UPROPERTY(SaveGame)
-	TArray<float> PillarForwardOffsets;
-
-	// pillar side
-	UPROPERTY(SaveGame)
-	TArray<EARSSideMode> PillarSideModes;
-
-	// pillar auto roll
-	UPROPERTY(SaveGame)
-	TArray<bool> PillarAutoRoll;
-
-	FARSSettingsData()
+	void ClampPillarSlotsTo(int32 Limit)
 	{
-		EnsureSlotArraySizes();
+		const int32 Clamped = ClampPillarSlotLimit(Limit);
+		if (PillarSlots.Num() > Clamped)
+		{
+			PillarSlots.SetNum(Clamped);
+		}
 	}
 
-	void EnsureSlotArraySizes()
+	void Normalize()
 	{
-		if (PillarBlueprintNames.Num() < NumPillarSlots)
+		MigrateLegacyPillarSlots();
+		if (PillarSlots.Num() > MaxPillarSlots)
 		{
-			PillarBlueprintNames.SetNum(NumPillarSlots);
-		}
-		while (PillarEveryNs.Num() < NumPillarSlots)
-		{
-			PillarEveryNs.Add(4);
-		}
-		while (PillarSpacingOffsets.Num() < NumPillarSlots)
-		{
-			PillarSpacingOffsets.Add(0);
-		}
-		if (PillarAlignToRail.Num() < NumPillarSlots)
-		{
-			PillarAlignToRail.SetNum(NumPillarSlots);
-		}
-		while (PillarPreventOverlap.Num() < NumPillarSlots)
-		{
-			PillarPreventOverlap.Add(true); // defaults on for every slot
-		}
-		while (PillarRotations.Num() < NumPillarSlots * 3)
-		{
-			PillarRotations.Add(0.0f);
-		}
-		// whatever an old save or preset brought along
-		for (int32 i = 0; i < PillarRotationOffsets.Num() && i < NumPillarSlots; i++)
-		{
-			SetPillarRotation(i, PillarRotationOffsets[i]);
-		}
-		PillarRotationOffsets.Reset();
-		while (PillarZOffsets.Num() < NumPillarSlots)
-		{
-			PillarZOffsets.Add(0.0f);
-		}
-		while (PillarSideOffsets.Num() < NumPillarSlots)
-		{
-			PillarSideOffsets.Add(0.0f);
-		}
-		while (PillarForwardOffsets.Num() < NumPillarSlots)
-		{
-			PillarForwardOffsets.Add(0.0f);
-		}
-		while (PillarSideModes.Num() < NumPillarSlots)
-		{
-			PillarSideModes.Add(EARSSideMode::Center);
-		}
-		if (PillarAutoRoll.Num() < NumPillarSlots)
-		{
-			PillarAutoRoll.SetNum(NumPillarSlots);
+			PillarSlots.SetNum(MaxPillarSlots);
 		}
 	}
+
+	int32 AddPillarSlot(int32 Limit)
+	{
+		return CanAddPillarSlot(Limit) ? PillarSlots.AddDefaulted() : INDEX_NONE;
+	}
+
+	void RemovePillarSlot(int32 Index)
+	{
+		if (PillarSlots.IsValidIndex(Index))
+		{
+			PillarSlots.RemoveAt(Index);
+		}
+	}
+
+	bool MovePillarSlot(int32 Index, int32 Delta)
+	{
+		const int32 Target = Index + Delta;
+		if (!PillarSlots.IsValidIndex(Index) || !PillarSlots.IsValidIndex(Target))
+		{
+			return false;
+		}
+		PillarSlots.Swap(Index, Target);
+		return true;
+	}
+
+	FARSUnderRailSide GetUnderRailSide(bool bPartner) const
+	{
+		if (bPartner)
+		{
+			FARSUnderRailSide Partner = UnderRailPartner;
+			if (PartnerSharesBlueprint())
+			{
+				Partner.BlueprintName = UnderRailBlueprintName;
+			}
+			return Partner;
+		}
+		FARSUnderRailSide Side;
+		Side.BlueprintName = UnderRailBlueprintName;
+		Side.Length = UnderRailLength;
+		Side.bCoverEndGap = bCoverEndGap;
+		Side.RotationOffset = UnderRailRotationOffset;
+		Side.ZOffset = UnderRailZOffset;
+		Side.SideOffset = UnderRailSideOffset;
+		Side.ForwardOffset = UnderRailForwardOffset;
+		return Side;
+	}
+
+	void SetUnderRailSide(bool bPartner, const FARSUnderRailSide& Side)
+	{
+		if (bPartner)
+		{
+			const FString Kept = UnderRailPartner.BlueprintName;
+			UnderRailPartner = Side;
+			if (PartnerSharesBlueprint())
+			{
+				UnderRailPartner.BlueprintName = Kept;
+			}
+			return;
+		}
+		UnderRailBlueprintName = Side.BlueprintName;
+		UnderRailLength = Side.Length;
+		bCoverEndGap = Side.bCoverEndGap;
+		UnderRailRotationOffset = Side.RotationOffset;
+		UnderRailZOffset = Side.ZOffset;
+		UnderRailSideOffset = Side.SideOffset;
+		UnderRailForwardOffset = Side.ForwardOffset;
+	}
+
+	bool HasSplitUnderRailSides() const
+	{
+		return bDoubleRails && bSplitUnderRailSides && UnderRailSideMode != EARSSideMode::Center;
+	}
+
+	bool PartnerSharesBlueprint() const { return UnderRailSideMode == EARSSideMode::BothMirrored; }
 
 	static void ClampSideMode(EARSSideMode& Mode)
 	{
@@ -221,26 +298,6 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 		{
 			Mode = EARSSideMode::Center;
 		}
-	}
-
-	FRotator GetPillarRotation(int32 Slot) const
-	{
-		const int32 Base = Slot * 3;
-		return PillarRotations.IsValidIndex(Base + 2)
-			? FRotator(PillarRotations[Base], PillarRotations[Base + 1], PillarRotations[Base + 2])
-			: FRotator::ZeroRotator;
-	}
-
-	void SetPillarRotation(int32 Slot, const FRotator& Rotation)
-	{
-		const int32 Base = Slot * 3;
-		if (!PillarRotations.IsValidIndex(Base + 2))
-		{
-			return;
-		}
-		PillarRotations[Base] = Rotation.Pitch;
-		PillarRotations[Base + 1] = Rotation.Yaw;
-		PillarRotations[Base + 2] = Rotation.Roll;
 	}
 
 	static void NormalizeRotation(FRotator& Rotation)
@@ -253,45 +310,27 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 	// server-side sanitation of whatever the client sent
 	void ClampValues()
 	{
-		EnsureSlotArraySizes();
+		Normalize();
 		UnderRailLength = FMath::Clamp(UnderRailLength, 50.0f, 20000.0f);
 		UnderRailZOffset = FMath::Clamp(UnderRailZOffset, -10000.0f, 10000.0f);
 		UnderRailSideOffset = FMath::Clamp(UnderRailSideOffset, -10000.0f, 10000.0f);
 		UnderRailForwardOffset = FMath::Clamp(UnderRailForwardOffset, -10000.0f, 10000.0f);
-		for (int32 i = 0; i < PillarEveryNs.Num(); i++)
-		{
-			PillarEveryNs[i] = FMath::Clamp(PillarEveryNs[i], 1, 100);
-		}
-		for (int32& SpacingOffset : PillarSpacingOffsets)
-		{
-			SpacingOffset = FMath::Clamp(SpacingOffset, 0, 100);
-		}
-		for (float& ZOffset : PillarZOffsets)
-		{
-			ZOffset = FMath::Clamp(ZOffset, -10000.0f, 10000.0f);
-		}
-		for (float& SideOffset : PillarSideOffsets)
-		{
-			SideOffset = FMath::Clamp(SideOffset, -10000.0f, 10000.0f);
-		}
-		for (float& ForwardOffset : PillarForwardOffsets)
-		{
-			ForwardOffset = FMath::Clamp(ForwardOffset, -10000.0f, 10000.0f);
-		}
 		NormalizeRotation(UnderRailRotationOffset);
-		for (int32 i = 0; i < NumPillarSlots; i++)
+		for (FARSPillarSlotData& Slot : PillarSlots)
 		{
-			FRotator Rotation = GetPillarRotation(i);
+			Slot.EveryN = FMath::Clamp(Slot.EveryN, 1, 100);
+			Slot.SpacingOffset = FMath::Clamp(Slot.SpacingOffset, 0, 100);
+			Slot.ZOffset = FMath::Clamp(Slot.ZOffset, -10000.0f, 10000.0f);
+			Slot.SideOffset = FMath::Clamp(Slot.SideOffset, -10000.0f, 10000.0f);
+			Slot.ForwardOffset = FMath::Clamp(Slot.ForwardOffset, -10000.0f, 10000.0f);
+			FRotator Rotation = Slot.GetRotation();
 			NormalizeRotation(Rotation);
-			SetPillarRotation(i, Rotation);
+			Slot.SetRotation(Rotation);
+			ClampSideMode(Slot.SideMode);
 		}
 		const float SeparationMagnitude = FMath::Clamp(FMath::Abs(TrackSeparation), MinTrackSeparation, 10000.0f);
 		TrackSeparation = TrackSeparation < 0.0f ? -SeparationMagnitude : SeparationMagnitude;
 		ClampSideMode(UnderRailSideMode);
-		for (EARSSideMode& Mode : PillarSideModes)
-		{
-			ClampSideMode(Mode);
-		}
 		UnderRailPartner.Length = FMath::Clamp(UnderRailPartner.Length, 50.0f, 20000.0f);
 		UnderRailPartner.ZOffset = FMath::Clamp(UnderRailPartner.ZOffset, -10000.0f, 10000.0f);
 		UnderRailPartner.SideOffset = FMath::Clamp(UnderRailPartner.SideOffset, -10000.0f, 10000.0f);
@@ -301,12 +340,64 @@ struct AUTORAILSUPPORTS_API FARSSettingsData
 
 	void SeedPartnerFromUnderRail()
 	{
-		UnderRailPartner.Length = UnderRailLength;
-		UnderRailPartner.bCoverEndGap = bCoverEndGap;
-		UnderRailPartner.RotationOffset = UnderRailRotationOffset;
-		UnderRailPartner.ZOffset = UnderRailZOffset;
-		UnderRailPartner.SideOffset = UnderRailSideOffset;
-		UnderRailPartner.ForwardOffset = UnderRailForwardOffset;
+		UnderRailPartner = GetUnderRailSide(/*bPartner*/ false);
+	}
+
+private:
+	void MigrateLegacyPillarSlots()
+	{
+		if (Version >= CurrentVersion)
+		{
+			return;
+		}
+		Version = CurrentVersion;
+
+		const int32 LegacyCount = FMath::Max(PillarBlueprintNames.Num(),
+			FMath::Max(PillarEveryNs.Num(), PillarSideModes.Num()));
+		auto At = [](const auto& Array, int32 Index, auto Fallback)
+		{
+			return Array.IsValidIndex(Index) ? Array[Index] : Fallback;
+		};
+		for (int32 i = 0; i < LegacyCount; i++)
+		{
+			FARSPillarSlotData Slot;
+			Slot.BlueprintName = At(PillarBlueprintNames, i, FString());
+			Slot.EveryN = At(PillarEveryNs, i, 4);
+			Slot.SpacingOffset = At(PillarSpacingOffsets, i, 0);
+			Slot.bAlignToRail = At(PillarAlignToRail, i, false);
+			Slot.bPreventOverlap = At(PillarPreventOverlap, i, true);
+			Slot.bAutoRoll = At(PillarAutoRoll, i, false);
+			Slot.SideMode = At(PillarSideModes, i, EARSSideMode::Center);
+			// two legacy rotation shapes, the FRotator array only exists in pre-1.0.2 data
+			Slot.RotationPitch = At(PillarRotations, i * 3 + 0, 0.0f);
+			Slot.RotationYaw = At(PillarRotations, i * 3 + 1, 0.0f);
+			Slot.RotationRoll = At(PillarRotations, i * 3 + 2, 0.0f);
+			if (PillarRotationOffsets.IsValidIndex(i))
+			{
+				Slot.SetRotation(PillarRotationOffsets[i]);
+			}
+			Slot.ZOffset = At(PillarZOffsets, i, 0.0f);
+			Slot.SideOffset = At(PillarSideOffsets, i, 0.0f);
+			Slot.ForwardOffset = At(PillarForwardOffsets, i, 0.0f);
+			if (!Slot.BlueprintName.IsEmpty())
+			{
+				PillarSlots.Add(Slot);
+			}
+		}
+		Algo::Reverse(PillarSlots);
+
+		PillarBlueprintNames.Reset();
+		PillarEveryNs.Reset();
+		PillarSpacingOffsets.Reset();
+		PillarAlignToRail.Reset();
+		PillarPreventOverlap.Reset();
+		PillarRotations.Reset();
+		PillarRotationOffsets.Reset();
+		PillarZOffsets.Reset();
+		PillarSideOffsets.Reset();
+		PillarForwardOffsets.Reset();
+		PillarSideModes.Reset();
+		PillarAutoRoll.Reset();
 	}
 };
 

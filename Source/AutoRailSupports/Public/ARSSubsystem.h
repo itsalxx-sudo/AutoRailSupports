@@ -75,6 +75,8 @@ public:
 	static FARSSettings ResolveSettingsFrom(FARSSettingsData Data, class AFGBlueprintSubsystem* BlueprintSubsystem,
 	                                        const FARSMeasureFn& Measure, TArray<FString>* OutWarnings);
 
+	static int32 GetMaxPillarSlots(const UObject* WorldContext);
+
 	static bool ShouldWarnStampCount(float UnderRailLengthCm, float BlueprintLengthMeters);
 
 	static FText GetStampCountWarningText();
