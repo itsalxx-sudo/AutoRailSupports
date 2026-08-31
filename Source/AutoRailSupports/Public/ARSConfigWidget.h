@@ -6,16 +6,25 @@
 #include "ARSConfigWidget.generated.h"
 
 class AARSClientManager;
-class AARSSubsystem;
+class UARSBlueprintPickerWidget;
+class UARSCheckRowWidget;
+class UARSPillarSlotWidget;
+class UARSPresetRowWidget;
+class UARSSideModePickerWidget;
+class UARSSegmentedSwitchWidget;
 class UARSSliderWidget;
+class UARSUnderRailPanelWidget;
 class UButton;
-class UCheckBox;
 class UComboBoxString;
 class UEditableTextBox;
 class UFGWindow;
+class UPanelWidget;
 class UScrollBox;
 class UTextBlock;
 class UWidget;
+class UWidgetAnimation;
+
+enum class EARSPresetConfirm : uint8 { None, LoadOverUnsaved, Delete, Overwrite };
 
 UCLASS(Abstract)
 class AUTORAILSUPPORTS_API UARSConfigWidget : public UFGInteractWidget
@@ -34,263 +43,196 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Auto Rail Supports")
 	void RequestClose();
 
-	void SetHoverInfo(const FText& Name, const FText& Description);
-	void ClearHoverInfo();
+	void SetHoverInfo(const FText& Name, const FText& Description, const UObject* Source);
+	void ClearHoverInfo(const UObject* Source);
 
 	void HandleBlueprintSize(const FString& BlueprintName, const FVector& SizeMeters);
 
 protected:
-	//BOUND CONTROLS
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UFGWindow> WindowFrame;
+	UPROPERTY(EditDefaultsOnly, Category = "Auto Rail Supports")
+	TSubclassOf<UARSPillarSlotWidget> PillarSlotWidgetClass;
 
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> MasterButton;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> MasterButtonText;
+	UPROPERTY(EditDefaultsOnly, Category = "Auto Rail Supports")
+	TSubclassOf<UARSPresetRowWidget> PresetRowWidgetClass;
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText UnderRailHeader = NSLOCTEXT("AutoRailSupports", "SideUnderRail", "Main Rail");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText SplitMainHeader = NSLOCTEXT("AutoRailSupports", "SideMainRail", "Main Rail");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText PartnerHeader = NSLOCTEXT("AutoRailSupports", "SideSecondRail", "Second Rail");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText MasterOnLabel = NSLOCTEXT("AutoRailSupports", "MasterEnabled", "ENABLED");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText MasterOffLabel = NSLOCTEXT("AutoRailSupports", "MasterDisabled", "DISABLED");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText MasterOffHelp = NSLOCTEXT("AutoRailSupports", "MasterOffHelp", "Rails build plain. Applying to an existing rail still works.");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText PillarCountFormat = NSLOCTEXT("AutoRailSupports", "PillarCount", "{0} of {1}");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText DimensionsPendingText = NSLOCTEXT("AutoRailSupports", "DimsPending", "measuring...");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Text")
+	FText DimensionsUnknownText = NSLOCTEXT("AutoRailSupports", "DimsUnknown", "size unknown");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text")
+	FText PresetCountFormat = NSLOCTEXT("AutoRailSupports", "PresetCount", "{0} saved");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text")
+	FText NoPresetLoadedText = NSLOCTEXT("AutoRailSupports", "NoPresetLoaded", "Unsaved");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text", meta = (MultiLine = true))
+	FText UnsavedChangesQuestion = NSLOCTEXT("AutoRailSupports", "UnsavedChanges",
+		"You have unsaved changes. Loading a preset will discard them.");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text", meta = (MultiLine = true))
+	FText DeletePresetQuestion = NSLOCTEXT("AutoRailSupports", "DeletePreset", "Delete the preset \"{0}\"?");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text")
+	FText SavePresetLabel = NSLOCTEXT("AutoRailSupports", "SavePreset", "Save Changes");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text")
+	FText SaveNewPresetLabel = NSLOCTEXT("AutoRailSupports", "SaveNewPreset", "Save as New");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports|Preset Text", meta = (MultiLine = true))
+	FText OverwritePresetQuestion = NSLOCTEXT("AutoRailSupports", "OverwritePreset",
+		"A preset named \"{0}\" already exists. Overwrite it?");
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports")
+	FLinearColor MasterOnColor = FLinearColor(FColor(0x4C, 0xBB, 0x17));
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports")
+	FLinearColor MasterOffColor = FLinearColor(FColor(0x3A, 0x3A, 0x3A));
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports")
+	FLinearColor MasterOnTextColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, Category = "Auto Rail Supports")
+	FLinearColor MasterOffTextColor = FLinearColor(FColor(0x9A, 0x9A, 0x9A));
+
+	//FRAME
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UFGWindow> WindowFrame;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> CloseButton;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StatusText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UScrollBox> ContentScrollBox;
-
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HoverTitleText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HoverDescriptionText;
 
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> UnderBlueprintCombo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> UnderBlueprintLengthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> UnderBlueprintWidthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> UnderBlueprintHeightText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderLengthSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> UnderCoverGapCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderYawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderPitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderRollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderVerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderSidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> UnderForwardSpin;
+	//HEADER
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> MasterButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> MasterButtonText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> MasterHelperText;
 
-	//PILLAR SLOTS 1-4
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar1Combo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar2Combo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar3Combo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar4Combo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1EverySpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2EverySpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3EverySpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4EverySpin;
-	// under-rail segments to skip before this slot's first pillar
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1SpacingSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2SpacingSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3SpacingSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4SpacingSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar1InclineCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar2InclineCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar3InclineCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar4InclineCheck;
+	//PRESETS
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetHeaderButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PresetCountText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PresetActiveNameText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> PresetDirtyIndicator;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> PresetExpandedChevron;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> PresetCollapsedChevron;
 
-	// on = this slot is removed by a higher-priority slot on the same segment
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar1PriorityCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar2PriorityCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar3PriorityCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar4PriorityCheck;
-
-	// per-slot dimensions
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar1BlueprintLengthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar1BlueprintWidthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar1BlueprintHeightText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar2BlueprintLengthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar2BlueprintWidthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar2BlueprintHeightText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar3BlueprintLengthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar3BlueprintWidthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar3BlueprintHeightText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar4BlueprintLengthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar4BlueprintWidthText;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Pillar4BlueprintHeightText;
-
-	// per-slot rotation and position offset
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1YawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1PitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1RollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1VerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1SidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar1ForwardSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2YawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2PitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2RollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2VerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2SidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar2ForwardSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3YawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3PitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3RollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3VerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3SidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar3ForwardSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4YawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4PitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4RollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4VerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4SidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> Pillar4ForwardSpin;
-
-	// checked = the next run's blueprints group into one blueprint for dismantling
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> CombineBlueprintCheck;
-
-	//DOUBLE RAILS
-	// checked = supports are placed for a second track alongside the one you build
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> DoubleRailsCheck;
-	// distance between the two tracks
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> TrackSeparationSpin;
-	// placement of the blueprint
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> UnderSideModeCombo;
-	// checked = tilt when the two rails sit at different heights
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> UnderAutoRollCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar1SideModeCombo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar2SideModeCombo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar3SideModeCombo;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Pillar4SideModeCombo;
-	// checked = the second track's under-rail gets its own settings
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> SplitUnderRailSidesCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerLengthSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> PartnerCoverGapCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerYawSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerPitchSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerRollSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerVerticalSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerSidewaysSpin;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> PartnerForwardSpin;
-
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar1AutoRollCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar2AutoRollCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar3AutoRollCheck;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCheckBox> Pillar4AutoRollCheck;
-
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> PresetCombo;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> PresetDropdownPanel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetClickCatcher;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UPanelWidget> PresetListBox;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> PresetNameBox;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> SavePresetButton;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> LoadPresetButton;
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> DeletePresetButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetSaveButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PresetSaveButtonText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetResetButton;
 
-	// shown while the tiling length is low enough to stamp a huge number of parts per rail
-	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> UnderLengthWarning;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> PresetConfirmPanel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PresetConfirmText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetConfirmButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PresetCancelButton;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> PresetConfirmFlash;
+
+	//TRACK LAYOUT
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSegmentedSwitchWidget> TrackLayoutSwitch;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSliderWidget> TrackSeparationSlider;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> TrackSeparationHint;
+
+	//GENERAL
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSCheckRowWidget> CombineBlueprintCheck;
+
+	//UNDER-RAIL
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSSideModePickerWidget> UnderRailSideModeRow;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSCheckRowWidget> SplitSidesCheck;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSUnderRailPanelWidget> MainUnderRailPanel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UARSUnderRailPanelWidget> PartnerUnderRailPanel;
+
+	//PILLARS
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UPanelWidget> PillarSlotBox;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> AddPillarButton;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PillarCountText;
 
 private:
 	AARSClientManager* GetClientManager() const;
-	void UpdateBlueprintDimsText();
-	void UpdateDimsTextFor(const FString& BlueprintName, UTextBlock* LengthText, UTextBlock* WidthText, UTextBlock* HeightText);
-	// skipped if the size is cached or already in flight
-	void RequestBlueprintSize(const FString& BlueprintName);
-	void UpdateLengthWarning();
-	void RefreshBlueprintOptions();
-	void RefreshPresetOptions();
-	void PushWorkingToControls();
+
+	void ApplyMenuInputMode();
+	void CloseSelf();
 	void SendSettings();
 	void SetMasterButtonState(bool bEnabled);
-	void CloseSelf();
-	void ApplyMenuInputMode();
+
+	void RefreshBlueprintOptions();
+	void PushWorkingToControls();
+	void RebuildPillarList();
+	void UpdateConditionalVisibility();
+	void UpdateBlueprintInfo();
+	void RequestBlueprintSize(const FString& BlueprintName);
+	void BindMenuSounds();
+	void UpdateSaveButton();
+	void UpdatePresetHeader();
+	void TickPresetNameMarquee(float DeltaTime);
+
+	FText DimensionsTextFor(const FString& BlueprintName) const;
+	float UnderRailStepCm() const;
+
+	//PRESETS
+	void SetPresetMenuOpen(bool bOpen);
+	void RebuildPresetList();
+	void LoadPreset(const FString& PresetName);
+	void SavePresetAs(const FString& PresetName);
+	void AskConfirmation(EARSPresetConfirm Action, const FString& PresetName, const FText& Question);
+	void CloseConfirmation();
+	bool IsWorkingDirty() const;
 
 	UFUNCTION() void OnMasterToggleClicked();
 	UFUNCTION() void OnCloseClicked();
 
-	UFUNCTION() void OnUnderBlueprintChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnUnderLengthCommitted(float Value);
-	UFUNCTION() void OnUnderYawCommitted(float Value);
-	UFUNCTION() void OnUnderPitchCommitted(float Value);
-	UFUNCTION() void OnUnderRollCommitted(float Value);
-	UFUNCTION() void OnUnderVOffsetCommitted(float Value);
-	UFUNCTION() void OnUnderHOffsetCommitted(float Value);
-	UFUNCTION() void OnUnderFOffsetCommitted(float Value);
-	UFUNCTION() void OnUnderCoverGapChanged(bool bIsChecked);
-
-	UFUNCTION() void OnCombineBlueprintChanged(bool bIsChecked);
-
-	UFUNCTION() void OnDoubleRailsChanged(bool bIsChecked);
+	UFUNCTION() void OnTrackLayoutSelected(int32 Index);
 	UFUNCTION() void OnTrackSeparationCommitted(float Value);
-	UFUNCTION() void OnUnderSideModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnUnderAutoRollChanged(bool bIsChecked);
-	UFUNCTION() void OnPillarSideModeChanged0(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarSideModeChanged1(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarSideModeChanged2(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarSideModeChanged3(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnSplitUnderRailSidesChanged(bool bIsChecked);
-	UFUNCTION() void OnPartnerLengthCommitted(float Value);
-	UFUNCTION() void OnPartnerCoverGapChanged(bool bIsChecked);
-	UFUNCTION() void OnPartnerYawCommitted(float Value);
-	UFUNCTION() void OnPartnerPitchCommitted(float Value);
-	UFUNCTION() void OnPartnerRollCommitted(float Value);
-	UFUNCTION() void OnPartnerVOffsetCommitted(float Value);
-	UFUNCTION() void OnPartnerHOffsetCommitted(float Value);
-	UFUNCTION() void OnPartnerFOffsetCommitted(float Value);
+	UFUNCTION() void OnCombineBlueprintChanged(bool bIsChecked);
+	UFUNCTION() void OnUnderRailSideModeChanged(EARSSideMode SideMode);
+	UFUNCTION() void OnSplitSidesChanged(bool bIsChecked);
 
-	UFUNCTION() void OnPillarAutoRollChanged0(bool bIsChecked);
-	UFUNCTION() void OnPillarAutoRollChanged1(bool bIsChecked);
-	UFUNCTION() void OnPillarAutoRollChanged2(bool bIsChecked);
-	UFUNCTION() void OnPillarAutoRollChanged3(bool bIsChecked);
+	UFUNCTION() void OnUnderRailSideEdited(bool bPartnerSide);
+	UFUNCTION() void OnUnderRailBlueprintPicked(bool bPartnerSide, const FString& BlueprintName);
 
-	UFUNCTION() void OnPillarBlueprintChanged0(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarBlueprintChanged1(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarBlueprintChanged2(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarBlueprintChanged3(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION() void OnPillarEveryCommitted0(float Value);
-	UFUNCTION() void OnPillarEveryCommitted1(float Value);
-	UFUNCTION() void OnPillarEveryCommitted2(float Value);
-	UFUNCTION() void OnPillarEveryCommitted3(float Value);
-	UFUNCTION() void OnPillarSpacingCommitted0(float Value);
-	UFUNCTION() void OnPillarSpacingCommitted1(float Value);
-	UFUNCTION() void OnPillarSpacingCommitted2(float Value);
-	UFUNCTION() void OnPillarSpacingCommitted3(float Value);
-	UFUNCTION() void OnPillarAlignChanged0(bool bIsChecked);
-	UFUNCTION() void OnPillarAlignChanged1(bool bIsChecked);
-	UFUNCTION() void OnPillarAlignChanged2(bool bIsChecked);
-	UFUNCTION() void OnPillarAlignChanged3(bool bIsChecked);
-	UFUNCTION() void OnPillarPriorityChanged0(bool bIsChecked);
-	UFUNCTION() void OnPillarPriorityChanged1(bool bIsChecked);
-	UFUNCTION() void OnPillarPriorityChanged2(bool bIsChecked);
-	UFUNCTION() void OnPillarPriorityChanged3(bool bIsChecked);
+	UFUNCTION() void OnSlotEdited(int32 SlotIndex);
+	UFUNCTION() void OnSlotBlueprintPicked(int32 SlotIndex, const FString& BlueprintName);
+	UFUNCTION() void OnSlotMoveRequested(int32 SlotIndex, int32 Delta);
+	UFUNCTION() void OnSlotRemoveRequested(int32 SlotIndex);
+	UFUNCTION() void OnAddPillarClicked();
 
-	UFUNCTION() void OnPillarYawCommitted0(float Value);
-	UFUNCTION() void OnPillarYawCommitted1(float Value);
-	UFUNCTION() void OnPillarYawCommitted2(float Value);
-	UFUNCTION() void OnPillarYawCommitted3(float Value);
-	UFUNCTION() void OnPillarPitchCommitted0(float Value);
-	UFUNCTION() void OnPillarPitchCommitted1(float Value);
-	UFUNCTION() void OnPillarPitchCommitted2(float Value);
-	UFUNCTION() void OnPillarPitchCommitted3(float Value);
-	UFUNCTION() void OnPillarRollCommitted0(float Value);
-	UFUNCTION() void OnPillarRollCommitted1(float Value);
-	UFUNCTION() void OnPillarRollCommitted2(float Value);
-	UFUNCTION() void OnPillarRollCommitted3(float Value);
-	UFUNCTION() void OnPillarVOffsetCommitted0(float Value);
-	UFUNCTION() void OnPillarVOffsetCommitted1(float Value);
-	UFUNCTION() void OnPillarVOffsetCommitted2(float Value);
-	UFUNCTION() void OnPillarVOffsetCommitted3(float Value);
-	UFUNCTION() void OnPillarHOffsetCommitted0(float Value);
-	UFUNCTION() void OnPillarHOffsetCommitted1(float Value);
-	UFUNCTION() void OnPillarHOffsetCommitted2(float Value);
-	UFUNCTION() void OnPillarHOffsetCommitted3(float Value);
-	UFUNCTION() void OnPillarFOffsetCommitted0(float Value);
-	UFUNCTION() void OnPillarFOffsetCommitted1(float Value);
-	UFUNCTION() void OnPillarFOffsetCommitted2(float Value);
-	UFUNCTION() void OnPillarFOffsetCommitted3(float Value);
+	UFUNCTION() void OnPresetHeaderClicked();
+	UFUNCTION() void OnPresetClickCatcherClicked();
+	UFUNCTION() void OnPresetSaveClicked();
+	UFUNCTION() void OnPresetNameTextChanged(const FText& Text);
+	UFUNCTION() void OnPresetResetClicked();
+	UFUNCTION() void OnPresetConfirmClicked();
+	UFUNCTION() void OnPresetCancelClicked();
 
-	UFUNCTION() void OnSavePresetClicked();
-	UFUNCTION() void OnApplyPresetClicked();
-	UFUNCTION() void OnDeletePresetClicked();
-
-	void HandlePillarBlueprintChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType);
-	void HandlePillarEveryCommitted(int32 SlotIndex, float Value);
-	void HandlePillarSpacingCommitted(int32 SlotIndex, float Value);
-	void HandlePillarAlignChanged(int32 SlotIndex, bool bIsChecked);
-	void HandlePillarPriorityChanged(int32 SlotIndex, bool bIsChecked);
-	void HandlePillarYawCommitted(int32 SlotIndex, float Value);
-	void HandlePillarPitchCommitted(int32 SlotIndex, float Value);
-	void HandlePillarRollCommitted(int32 SlotIndex, float Value);
-	void HandlePillarVOffsetCommitted(int32 SlotIndex, float Value);
-	void HandlePillarHOffsetCommitted(int32 SlotIndex, float Value);
-	void HandlePillarFOffsetCommitted(int32 SlotIndex, float Value);
-	void HandlePillarSideModeChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType);
-	void HandlePillarAutoRollChanged(int32 SlotIndex, bool bIsChecked);
-
-	static void FillSideModeOptions(UComboBoxString* Combo);
-	static FString SideModeToOption(EARSSideMode Mode);
-	static EARSSideMode OptionToSideMode(const FString& Option);
+	UFUNCTION() void OnPresetRowChosen(const FString& PresetName);
+	UFUNCTION() void OnPresetRowRenamed(const FString& OldName, const FString& NewName);
+	UFUNCTION() void OnPresetRowDeleteRequested(const FString& PresetName);
+	UFUNCTION() void OnPresetRowRenameStarted(const FString& PresetName);
 
 private:
 	FARSSettingsData mWorking;
@@ -304,22 +246,25 @@ private:
 
 	TMap<FString, FVector> mMeasuredSizes;
 	TSet<FString> mRequestedSizeNames;
-	bool bAutoLengthOnSize = false;
+	FString mAutoLengthBlueprint;
+	bool bAutoLengthForPartner = false;
 
-	TArray<UComboBoxString*> mPillarCombos;
-	TArray<UARSSliderWidget*> mPillarEverySpins;
-	TArray<UARSSliderWidget*> mPillarSpacingSpins;
-	TArray<UCheckBox*> mPillarAlignChecks;
-	TArray<UCheckBox*> mPillarPriorityChecks;
-	TArray<UTextBlock*> mPillarLengthTexts;
-	TArray<UTextBlock*> mPillarWidthTexts;
-	TArray<UTextBlock*> mPillarHeightTexts;
-	TArray<UARSSliderWidget*> mPillarYawSpins;
-	TArray<UARSSliderWidget*> mPillarPitchSpins;
-	TArray<UARSSliderWidget*> mPillarRollSpins;
-	TArray<UARSSliderWidget*> mPillarVerticalSpins;
-	TArray<UARSSliderWidget*> mPillarSidewaysSpins;
-	TArray<UARSSliderWidget*> mPillarForwardSpins;
-	TArray<UComboBoxString*> mPillarSideModeCombos;
-	TArray<UCheckBox*> mPillarAutoRollChecks;
+	UPROPERTY() TArray<TObjectPtr<UARSPillarSlotWidget>> mSlotWidgets;
+
+	UPROPERTY() TArray<TObjectPtr<UARSPresetRowWidget>> mPresetRows;
+
+	TWeakObjectPtr<const UObject> mHoverSource;
+
+	FString mActivePresetName;
+	float mNameMarqueeTime = 0.0f;
+	FARSSettingsData mPresetBaseline;
+	EARSPresetConfirm mConfirmAction = EARSPresetConfirm::None;
+	FString mConfirmPresetName;
+
+	float mPositionTiny = 0.01f;
+	float mPositionSmall = 0.1f;
+	float mPositionLarge = 4.0f;
+	float mRotationTiny = 0.1f;
+	float mRotationSmall = 1.0f;
+	float mRotationLarge = 45.0f;
 };

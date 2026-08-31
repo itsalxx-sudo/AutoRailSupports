@@ -1,5 +1,8 @@
 #include "ARSClientManager.h"
 
+#include "Components/Button.h"
+#include "Components/ComboBoxString.h"
+
 #include "ARSConfigWidget.h"
 #include "ARSDebug.h"
 #include "ARSGizmo.h"
@@ -166,12 +169,15 @@ AFGPlayerController* AARSClientManager::GetLocalController() const
 void AARSClientManager::ApplyServerSettings(const FARSSettingsData& Settings)
 {
 	mSettings = Settings;
-	mSettings.EnsureSlotArraySizes();
+	mSettings.Normalize();
+	mSettings.ClampPillarSlotsTo(AARSSubsystem::GetMaxPillarSlots(this));
 	mSettingsRevision++;
 	bHaveServerSettings = true;
 	if (mARSModeActive)
 	{
 		mWorking = mSettings;
+		// the list this indexes into can have shrunk
+		ClampSelectedPart();
 	}
 }
 
@@ -635,8 +641,99 @@ UWidget* AARSClientManager::FindLiveDismantleRefundsWidget()
 
 static const TCHAR* const ARSApplySoundPath =
 	TEXT("/Game/WwiseAudio/Events/Interface/Hologram/Play_UI_Hologram_HalfPlaced.Play_UI_Hologram_HalfPlaced");
+static const TCHAR* MenuSoundPath(EARSMenuSound Sound)
+{
+	switch (Sound)
+	{
+	case EARSMenuSound::Hover:
+		return TEXT("/Game/WwiseAudio/Events/Interface/MainMenu/Play_UI_MainMenu_MouseOver.Play_UI_MainMenu_MouseOver");
+	case EARSMenuSound::Click:
+		return TEXT("/Game/WwiseAudio/Events/Interface/MainMenu/Play_UI_MainMenu_Click.Play_UI_MainMenu_Click");
+	case EARSMenuSound::Select:
+		return TEXT("/Game/WwiseAudio/Events/Interface/MainMenu/Play_UI_MainMenu_Select.Play_UI_MainMenu_Select");
+	case EARSMenuSound::Back:
+		return TEXT("/Game/WwiseAudio/Events/Interface/MainMenu/Play_UI_MainMenu_Back.Play_UI_MainMenu_Back");
+	case EARSMenuSound::Ticked:
+		return TEXT("/Game/WwiseAudio/Events/Interface/StandbyButton/Play_UI_StandBy_Ticked.Play_UI_StandBy_Ticked");
+	case EARSMenuSound::UnTicked:
+		return TEXT("/Game/WwiseAudio/Events/Interface/StandbyButton/Play_UI_StandBy_UnTicked.Play_UI_StandBy_UnTicked");
+	case EARSMenuSound::SliderTick:
+		return TEXT("/Game/WwiseAudio/Events/Interface/Overclock/Play_UI_OverClock_Tick.Play_UI_OverClock_Tick");
+	default:
+		return nullptr;
+	}
+}
+
 static const TCHAR* const ARSCycleModeSoundPath =
 	TEXT("/Game/WwiseAudio/Events/Interface/BuildMenu/Play_UI_BuildGun_SwitchState.Play_UI_BuildGun_SwitchState");
+
+void AARSClientManager::PlayMenuSound(const UObject* WorldContext, EARSMenuSound Sound)
+{
+	if (AARSClientManager* Manager = Get(WorldContext ? WorldContext->GetWorld() : nullptr))
+	{
+		Manager->PostMenuSound(Sound);
+	}
+}
+
+void AARSClientManager::PostMenuSound(EARSMenuSound Sound)
+{
+	TObjectPtr<UAkAudioEvent>* Cached = mMenuSounds.Find(Sound);
+	if (!Cached)
+	{
+		const TCHAR* Path = MenuSoundPath(Sound);
+		Cached = &mMenuSounds.Add(Sound, Path ? LoadObject<UAkAudioEvent>(nullptr, Path) : nullptr);
+	}
+	AFGPlayerController* PlayerController = GetLocalController();
+	APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (*Cached && Pawn)
+	{
+		(*Cached)->PostOnActor(Pawn, FOnAkPostEventCallback(), 0, false);
+	}
+}
+
+void AARSClientManager::BindButtonSounds(const UObject* WorldContext, UButton* Button)
+{
+	AARSClientManager* Manager = Get(WorldContext ? WorldContext->GetWorld() : nullptr);
+	if (Manager && Button)
+	{
+		Button->OnHovered.AddDynamic(Manager, &AARSClientManager::HandleButtonHovered);
+		Button->OnClicked.AddDynamic(Manager, &AARSClientManager::HandleButtonClicked);
+	}
+}
+
+void AARSClientManager::BindComboBoxSounds(const UObject* WorldContext, UComboBoxString* Combo)
+{
+	AARSClientManager* Manager = Get(WorldContext ? WorldContext->GetWorld() : nullptr);
+	if (!Manager || !Combo)
+	{
+		return;
+	}
+	Combo->OnOpening.AddDynamic(Manager, &AARSClientManager::HandleComboOpening);
+	Combo->OnSelectionChanged.AddDynamic(Manager, &AARSClientManager::HandleComboSelectionChanged);
+}
+
+void AARSClientManager::HandleButtonHovered()
+{
+	PostMenuSound(EARSMenuSound::Hover);
+}
+
+void AARSClientManager::HandleButtonClicked()
+{
+	PostMenuSound(EARSMenuSound::Click);
+}
+
+void AARSClientManager::HandleComboOpening()
+{
+	PostMenuSound(EARSMenuSound::Click);
+}
+
+void AARSClientManager::HandleComboSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (SelectionType != ESelectInfo::Direct)
+	{
+		PostMenuSound(EARSMenuSound::Select);
+	}
+}
 
 void AARSClientManager::PlayUISound(TObjectPtr<UAkAudioEvent>& InOutEvent, bool& bInOutLoaded, const TCHAR* EventPath)
 {
@@ -826,6 +923,25 @@ bool AARSClientManager::DeletePreset(const FString& Name)
 	return false;
 }
 
+bool AARSClientManager::RenamePreset(const FString& OldName, const FString& NewName)
+{
+	const FString Trimmed = NewName.TrimStartAndEnd();
+	if (Trimmed.IsEmpty() || FindPreset(Trimmed))
+	{
+		return false;
+	}
+	for (FARSPreset& Preset : mConfig.Presets)
+	{
+		if (Preset.Name.Equals(OldName, ESearchCase::IgnoreCase))
+		{
+			Preset.Name = Trimmed;
+			SaveGlobalConfig();
+			return true;
+		}
+	}
+	return false;
+}
+
 const FARSPreset* AARSClientManager::FindPreset(const FString& Name) const
 {
 	return mConfig.Presets.FindByPredicate([&Name](const FARSPreset& Preset)
@@ -851,7 +967,7 @@ void AARSClientManager::LoadGlobalConfig()
 			mConfig = Loaded;
 			for (FARSPreset& Preset : mConfig.Presets)
 			{
-				Preset.Settings.EnsureSlotArraySizes();
+				Preset.Settings.Normalize();
 			}
 		}
 		else
@@ -907,7 +1023,7 @@ void AARSClientManager::EnterARSMode(EARSModeGun Gun)
 	mLastHintSig = 0xFFFFFFFF; // Force a fresh hint inject on the first tick
 	mHintReinjectFramesLeft = 0;
 	mWorking = mSettings;
-	mWorking.EnsureSlotArraySizes();
+	mWorking.Normalize();
 
 	const int32 Priority = PlayerController->GetMappingContextPriority() + 1000;
 	if (mModeSharedContext)
@@ -960,43 +1076,53 @@ void AARSClientManager::UpdateARSModeValidity()
 	}
 }
 
-int32 AARSClientManager::NumSettingsModesForPart(int32 Part) const
+void AARSClientManager::BuildPartCycle(TArray<FARSPartRef>& OutParts) const
 {
-	if (Part == 0)
+	OutParts.Reset();
+	OutParts.Add({ INDEX_NONE, false });
+	if (mWorking.HasSplitUnderRailSides())
+	{
+		OutParts.Add({ INDEX_NONE, true });
+	}
+	for (int32 SlotIndex = 0; SlotIndex < mWorking.NumPillarSlots(); SlotIndex++)
+	{
+		OutParts.Add({ SlotIndex, false });
+	}
+}
+
+int32 AARSClientManager::NumParts() const
+{
+	return 1 + (mWorking.HasSplitUnderRailSides() ? 1 : 0) + mWorking.NumPillarSlots();
+}
+
+AARSClientManager::FARSPartRef AARSClientManager::GetSelectedPart() const
+{
+	TArray<FARSPartRef> Parts;
+	BuildPartCycle(Parts);
+	return Parts.IsValidIndex(mSelectedPart) ? Parts[mSelectedPart] : Parts[0];
+}
+
+void AARSClientManager::ClampSelectedPart()
+{
+	mSelectedPart = FMath::Clamp(mSelectedPart, 0, FMath::Max(0, NumParts() - 1));
+	if (mSettingsModeIndex >= NumSettingsModesForPart(GetSelectedPart()))
+	{
+		mSettingsModeIndex = 0;
+	}
+}
+
+int32 AARSClientManager::NumSettingsModesForPart(const FARSPartRef& Part) const
+{
+	if (Part.IsUnderRail())
 	{
 		return mWorking.bDoubleRails ? 3 : 2;
 	}
 	return 3;
 }
 
-bool AARSClientManager::IsEditingPartnerUnderRail() const
+EARSSettingsMode AARSClientManager::SettingsModeForPartIndex(const FARSPartRef& Part, int32 Index) const
 {
-	return mSelectedPart == 0 && mWorking.bDoubleRails && mWorking.bSplitUnderRailSides && mEditingPartnerSide;
-}
-
-AARSClientManager::FARSUnderRailEdit AARSClientManager::SelectedUnderRailEdit()
-{
-	FARSUnderRailEdit Edit;
-	if (IsEditingPartnerUnderRail())
-	{
-		Edit.Length = &mWorking.UnderRailPartner.Length;
-		Edit.Rotation = &mWorking.UnderRailPartner.RotationOffset;
-		Edit.ZOffset = &mWorking.UnderRailPartner.ZOffset;
-		Edit.SideOffset = &mWorking.UnderRailPartner.SideOffset;
-		Edit.ForwardOffset = &mWorking.UnderRailPartner.ForwardOffset;
-		return Edit;
-	}
-	Edit.Length = &mWorking.UnderRailLength;
-	Edit.Rotation = &mWorking.UnderRailRotationOffset;
-	Edit.ZOffset = &mWorking.UnderRailZOffset;
-	Edit.SideOffset = &mWorking.UnderRailSideOffset;
-	Edit.ForwardOffset = &mWorking.UnderRailForwardOffset;
-	return Edit;
-}
-
-EARSSettingsMode AARSClientManager::SettingsModeForPartIndex(int32 Part, int32 Index) const
-{
-	if (Part == 0)
+	if (Part.IsUnderRail())
 	{
 		if (Index == 2 && mWorking.bDoubleRails)
 		{
@@ -1015,24 +1141,25 @@ EARSSettingsMode AARSClientManager::SettingsModeForPartIndex(int32 Part, int32 I
 void AARSClientManager::OnPrevPartAction()
 {
 	if (!mARSModeActive) { return; }
-	mSelectedPart = (mSelectedPart + (FARSSettingsData::NumPillarSlots + 1) - 1) % (FARSSettingsData::NumPillarSlots + 1);
+	const int32 Num = NumParts();
+	mSelectedPart = (mSelectedPart + Num - 1) % Num;
 	// keep the current mode if the new part has it, otherwise fall back to general
-	if (mSettingsModeIndex >= NumSettingsModesForPart(mSelectedPart)) { mSettingsModeIndex = 0; }
+	if (mSettingsModeIndex >= NumSettingsModesForPart(GetSelectedPart())) { mSettingsModeIndex = 0; }
 	PlayCycleModeSound();
 }
 
 void AARSClientManager::OnNextPartAction()
 {
 	if (!mARSModeActive) { return; }
-	mSelectedPart = (mSelectedPart + 1) % (FARSSettingsData::NumPillarSlots + 1);
-	if (mSettingsModeIndex >= NumSettingsModesForPart(mSelectedPart)) { mSettingsModeIndex = 0; }
+	mSelectedPart = (mSelectedPart + 1) % NumParts();
+	if (mSettingsModeIndex >= NumSettingsModesForPart(GetSelectedPart())) { mSettingsModeIndex = 0; }
 	PlayCycleModeSound();
 }
 
 void AARSClientManager::OnCycleSettingsModeAction()
 {
 	if (!mARSModeActive) { return; }
-	const int32 Num = NumSettingsModesForPart(mSelectedPart);
+	const int32 Num = NumSettingsModesForPart(GetSelectedPart());
 	mSettingsModeIndex = (mSettingsModeIndex + 1) % Num;
 	PlayCycleModeSound();
 }
@@ -1138,24 +1265,29 @@ void AARSClientManager::ApplyArrow(EARSArrow Arrow)
 	const float AlongSign = AlongDot >= 0.0f ? 1.0f : -1.0f;
 	const float SideSign = SideDot >= 0.0f ? 1.0f : -1.0f;
 
-	mWorking.EnsureSlotArraySizes();
-	const bool bUnderRail = (mSelectedPart == 0);
-	const int32 Slot = mSelectedPart - 1;
+	mWorking.Normalize();
+	ClampSelectedPart();
+	const FARSPartRef Part = GetSelectedPart();
 	const EARSSettingsMode Mode = GetCurrentSettingsMode();
+	if (!Part.IsUnderRail() && !mWorking.PillarSlots.IsValidIndex(Part.PillarSlot))
+	{
+		return;
+	}
 
 	if (Mode == EARSSettingsMode::General)
 	{
 		const float StepCm = GetPositionStepCm();
-		const FARSUnderRailEdit Edit = SelectedUnderRailEdit();
-		if (bAlong)
+		const float Delta = bAlong ? AlongSign * StepCm : SideSign * StepCm;
+		if (Part.IsUnderRail())
 		{
-			float& Forward = bUnderRail ? *Edit.ForwardOffset : mWorking.PillarForwardOffsets[Slot];
-			Forward += AlongSign * StepCm;
+			FARSUnderRailSide Side = mWorking.GetUnderRailSide(Part.bPartnerSide);
+			(bAlong ? Side.ForwardOffset : Side.SideOffset) += Delta;
+			mWorking.SetUnderRailSide(Part.bPartnerSide, Side);
 		}
 		else
 		{
-			float& Side = bUnderRail ? *Edit.SideOffset : mWorking.PillarSideOffsets[Slot];
-			Side += SideSign * StepCm;
+			FARSPillarSlotData& Slot = mWorking.PillarSlots[Part.PillarSlot];
+			(bAlong ? Slot.ForwardOffset : Slot.SideOffset) += Delta;
 		}
 	}
 	else
@@ -1166,9 +1298,15 @@ void AARSClientManager::ApplyArrow(EARSArrow Arrow)
 		const int32 IntStep = static_cast<int32>(Sign);
 		switch (Mode)
 		{
-		case EARSSettingsMode::TilingLength:  *SelectedUnderRailEdit().Length += Sign * GetPositionStepCm(); break;
-		case EARSSettingsMode::PillarSpacing: mWorking.PillarEveryNs[Slot] += IntStep; break;
-		case EARSSettingsMode::SpacingOffset: mWorking.PillarSpacingOffsets[Slot] += IntStep; break;
+		case EARSSettingsMode::TilingLength:
+		{
+			FARSUnderRailSide Side = mWorking.GetUnderRailSide(Part.bPartnerSide);
+			Side.Length += Sign * GetPositionStepCm();
+			mWorking.SetUnderRailSide(Part.bPartnerSide, Side);
+			break;
+		}
+		case EARSSettingsMode::PillarSpacing: mWorking.PillarSlots[Part.PillarSlot].EveryN += IntStep; break;
+		case EARSSettingsMode::SpacingOffset: mWorking.PillarSlots[Part.PillarSlot].SpacingOffset += IntStep; break;
 		case EARSSettingsMode::TrackSeparation:
 		{
 			float Next = mWorking.TrackSeparation + Sign * GetPositionStepCm();
@@ -1195,9 +1333,20 @@ void AARSClientManager::ApplyVertical(float Sign)
 	if (!mARSModeActive) { return; }
 	// Vertical offset is General mode only
 	if (GetCurrentSettingsMode() != EARSSettingsMode::General) { return; }
-	mWorking.EnsureSlotArraySizes();
-	float& ZOffset = (mSelectedPart == 0) ? *SelectedUnderRailEdit().ZOffset : mWorking.PillarZOffsets[mSelectedPart - 1];
-	ZOffset += Sign * GetPositionStepCm();
+	mWorking.Normalize();
+	ClampSelectedPart();
+	const FARSPartRef Part = GetSelectedPart();
+	const float Delta = Sign * GetPositionStepCm();
+	if (Part.IsUnderRail())
+	{
+		FARSUnderRailSide Side = mWorking.GetUnderRailSide(Part.bPartnerSide);
+		Side.ZOffset += Delta;
+		mWorking.SetUnderRailSide(Part.bPartnerSide, Side);
+	}
+	else if (mWorking.PillarSlots.IsValidIndex(Part.PillarSlot))
+	{
+		mWorking.PillarSlots[Part.PillarSlot].ZOffset += Delta;
+	}
 	SendWorkingSettings();
 }
 
@@ -1205,8 +1354,15 @@ void AARSClientManager::ApplyRotate(float Sign)
 {
 	if (!mARSModeActive) { return; }
 	if (GetCurrentSettingsMode() != EARSSettingsMode::General) { return; }
-	mWorking.EnsureSlotArraySizes();
-	FRotator Rotation = (mSelectedPart == 0) ? *SelectedUnderRailEdit().Rotation : mWorking.GetPillarRotation(mSelectedPart - 1);
+	mWorking.Normalize();
+	ClampSelectedPart();
+	const FARSPartRef Part = GetSelectedPart();
+	if (!Part.IsUnderRail() && !mWorking.PillarSlots.IsValidIndex(Part.PillarSlot))
+	{
+		return;
+	}
+	FARSUnderRailSide Side = mWorking.GetUnderRailSide(Part.bPartnerSide);
+	FRotator Rotation = Part.IsUnderRail() ? Side.RotationOffset : mWorking.PillarSlots[Part.PillarSlot].GetRotation();
 	const float Delta = Sign * GetRotationStepDegrees();
 	switch (mRotationAxis)
 	{
@@ -1214,13 +1370,14 @@ void AARSClientManager::ApplyRotate(float Sign)
 	case 2:  Rotation.Roll += Delta; break;
 	default: Rotation.Yaw += Delta; break;
 	}
-	if (mSelectedPart == 0)
+	if (Part.IsUnderRail())
 	{
-		mWorking.UnderRailRotationOffset = Rotation;
+		Side.RotationOffset = Rotation;
+		mWorking.SetUnderRailSide(Part.bPartnerSide, Side);
 	}
 	else
 	{
-		mWorking.SetPillarRotation(mSelectedPart - 1, Rotation);
+		mWorking.PillarSlots[Part.PillarSlot].SetRotation(Rotation);
 	}
 	SendWorkingSettings();
 }
@@ -1300,12 +1457,12 @@ void AARSClientManager::HideModeHUD()
 
 FString AARSClientManager::GetSelectedBlueprintName() const
 {
-	if (mSelectedPart == 0)
+	const FARSPartRef Part = GetSelectedPart();
+	if (Part.IsUnderRail())
 	{
-		return mWorking.UnderRailBlueprintName;
+		return mWorking.GetUnderRailSide(Part.bPartnerSide).BlueprintName;
 	}
-	const int32 Slot = mSelectedPart - 1;
-	return mWorking.PillarBlueprintNames.IsValidIndex(Slot) ? mWorking.PillarBlueprintNames[Slot] : FString();
+	return mWorking.PillarSlots.IsValidIndex(Part.PillarSlot) ? mWorking.PillarSlots[Part.PillarSlot].BlueprintName : FString();
 }
 
 FVector AARSClientManager::GetSelectedBlueprintSizeMeters()
@@ -1329,8 +1486,7 @@ FVector AARSClientManager::GetSelectedBlueprintSizeMeters()
 void AARSClientManager::BuildSelectedSettingsRows(TArray<FARSInfoPanelRow>& OutRows) const
 {
 	OutRows.Reset();
-	const bool bUnderRail = (mSelectedPart == 0);
-	const int32 Slot = mSelectedPart - 1;
+	const FARSPartRef Part = GetSelectedPart();
 	const EARSSettingsMode Mode = GetCurrentSettingsMode();
 	const bool bGeneral = (Mode == EARSSettingsMode::General);
 
@@ -1369,40 +1525,34 @@ void AARSClientManager::BuildSelectedSettingsRows(TArray<FARSInfoPanelRow>& OutR
 			NSLOCTEXT("AutoRailSupports", "CellVertical", "Vert"), Meters(Offsets.Z));
 	};
 
-	if (bUnderRail)
+	if (Part.IsUnderRail())
 	{
-		const bool bPartner = mSelectedPart == 0 && mWorking.bDoubleRails
-			&& mWorking.bSplitUnderRailSides && mEditingPartnerSide;
-		const FARSUnderRailSide& Partner = mWorking.UnderRailPartner;
-		const float Length = bPartner ? Partner.Length : mWorking.UnderRailLength;
-		const FRotator Rotation = bPartner ? Partner.RotationOffset : mWorking.UnderRailRotationOffset;
-		const FVector Offsets = bPartner
-			? FVector(Partner.ForwardOffset, Partner.SideOffset, Partner.ZOffset)
-			: FVector(mWorking.UnderRailForwardOffset, mWorking.UnderRailSideOffset, mWorking.UnderRailZOffset);
+		const FARSUnderRailSide Side = mWorking.GetUnderRailSide(Part.bPartnerSide);
 
 		AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowTilingLength", "Tiling Length:"),
-			Meters(Length), Mode == EARSSettingsMode::TilingLength);
+			Meters(Side.Length), Mode == EARSSettingsMode::TilingLength);
 		if (mWorking.bDoubleRails)
 		{
-			const FText Side = mWorking.TrackSeparation >= 0.0f
+			const FText SecondSide = mWorking.TrackSeparation >= 0.0f
 				? NSLOCTEXT("AutoRailSupports", "SideRight", "right")
 				: NSLOCTEXT("AutoRailSupports", "SideLeft", "left");
 			AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowTrackSeparation", "Track Separation:"),
 				FText::Format(NSLOCTEXT("AutoRailSupports", "SeparationValue", "{0} ({1})"),
-					Meters(FMath::Abs(mWorking.TrackSeparation)), Side),
+					Meters(FMath::Abs(mWorking.TrackSeparation)), SecondSide),
 				Mode == EARSSettingsMode::TrackSeparation);
 		}
-		AddOffsetAndRotationRows(Rotation, Offsets);
+		AddOffsetAndRotationRows(Side.RotationOffset,
+			FVector(Side.ForwardOffset, Side.SideOffset, Side.ZOffset));
 	}
-	else if (mWorking.PillarForwardOffsets.IsValidIndex(Slot))
+	else if (mWorking.PillarSlots.IsValidIndex(Part.PillarSlot))
 	{
+		const FARSPillarSlotData& Slot = mWorking.PillarSlots[Part.PillarSlot];
 		AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowPillarSpacing", "Pillar Spacing:"),
-			FText::AsNumber(mWorking.PillarEveryNs[Slot]), Mode == EARSSettingsMode::PillarSpacing);
+			FText::AsNumber(Slot.EveryN), Mode == EARSSettingsMode::PillarSpacing);
 		AddSimpleRow(NSLOCTEXT("AutoRailSupports", "RowSpacingOffset", "Spacing Offset:"),
-			FText::AsNumber(mWorking.PillarSpacingOffsets[Slot]), Mode == EARSSettingsMode::SpacingOffset);
-		AddOffsetAndRotationRows(
-			mWorking.GetPillarRotation(Slot),
-			FVector(mWorking.PillarForwardOffsets[Slot], mWorking.PillarSideOffsets[Slot], mWorking.PillarZOffsets[Slot]));
+			FText::AsNumber(Slot.SpacingOffset), Mode == EARSSettingsMode::SpacingOffset);
+		AddOffsetAndRotationRows(Slot.GetRotation(),
+			FVector(Slot.ForwardOffset, Slot.SideOffset, Slot.ZOffset));
 	}
 }
 
@@ -1412,16 +1562,16 @@ void AARSClientManager::RefreshInfoPanel()
 	{
 		return;
 	}
-	const bool bUnderRail = (mSelectedPart == 0);
-	FText PartLabel = bUnderRail
+	const FARSPartRef Part = GetSelectedPart();
+	FText PartLabel = Part.IsUnderRail()
 		? NSLOCTEXT("AutoRailSupports", "PartUnderRail", "Under-Rail")
-		: FText::Format(NSLOCTEXT("AutoRailSupports", "PartPillar", "Pillar Slot {0}"), FText::AsNumber(mSelectedPart));
-	if (bUnderRail && mWorking.bDoubleRails && mWorking.bSplitUnderRailSides)
+		: FText::Format(NSLOCTEXT("AutoRailSupports", "PartPillar", "Pillar Slot {0}"), FText::AsNumber(Part.PillarSlot + 1));
+	if (Part.IsUnderRail() && mWorking.HasSplitUnderRailSides())
 	{
 		PartLabel = FText::Format(NSLOCTEXT("AutoRailSupports", "PartUnderRailSide", "Under-Rail ({0})"),
-			mEditingPartnerSide
-				? NSLOCTEXT("AutoRailSupports", "SideSecondTrack", "Second Track")
-				: NSLOCTEXT("AutoRailSupports", "SideMainTrack", "Main Track"));
+			Part.bPartnerSide
+				? NSLOCTEXT("AutoRailSupports", "SideSecondRail", "Second Rail")
+				: NSLOCTEXT("AutoRailSupports", "SideMainRail", "Main Rail"));
 	}
 
 	const FString Name = GetSelectedBlueprintName();
@@ -1455,8 +1605,11 @@ void AARSClientManager::UpdateRotationGizmo()
 		return;
 	}
 	// anchor on the selected part's nearest stamp
+	const FARSPartRef Part = GetSelectedPart();
+	const bool bSideMatters = Part.IsUnderRail() && mWorking.HasSplitUnderRailSides();
 	FTransform SegmentTransform;
-	if (!mPreviewActor->GetClosestStampTransform(mSelectedPart, Pawn->GetActorLocation(), SegmentTransform, &mEditingPartnerSide))
+	if (!mPreviewActor->GetClosestStampTransform(Part.PillarSlot, Part.bPartnerSide, bSideMatters,
+		Pawn->GetActorLocation(), SegmentTransform))
 	{
 		DestroyRotationGizmo();
 		return;
@@ -1501,7 +1654,8 @@ void AARSClientManager::DestroyRotationGizmo()
 void AARSClientManager::MaybeShowTilingWarning()
 {
 	const FVector Size = GetSelectedBlueprintSizeMeters();
-	const bool bWarn = AARSSubsystem::ShouldWarnStampCount(mWorking.UnderRailLength, Size.X);
+	const float Length = mWorking.GetUnderRailSide(GetSelectedPart().bPartnerSide).Length;
+	const bool bWarn = AARSSubsystem::ShouldWarnStampCount(Length, Size.X);
 	if (bWarn && !mTilingWarnActive)
 	{
 		if (AFGPlayerController* PlayerController = GetLocalController())

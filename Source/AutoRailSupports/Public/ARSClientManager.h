@@ -19,10 +19,24 @@ class UARSRemoteCallObject;
 class UTextBlock;
 class URichTextBlock;
 class UAkAudioEvent;
+class UButton;
+class UComboBoxString;
 class UFGGameUI;
 class UFGInputMappingContext;
 class UInputAction;
 class UWidget;
+
+UENUM()
+enum class EARSMenuSound : uint8
+{
+	Hover,
+	Click,
+	Select,
+	Back,
+	Ticked,
+	UnTicked,
+	SliderTick,
+};
 
 // which gun opened in-world ARS Mode
 enum class EARSModeGun : uint8 { Build, Dismantle };
@@ -40,6 +54,11 @@ public:
 	AARSClientManager();
 
 	static AARSClientManager* Get(UWorld* World);
+
+	static void PlayMenuSound(const UObject* WorldContext, EARSMenuSound Sound);
+
+	static void BindButtonSounds(const UObject* WorldContext, UButton* Button);
+	static void BindComboBoxSounds(const UObject* WorldContext, UComboBoxString* Combo);
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -65,7 +84,9 @@ public:
 	const FARSGlobalConfig& GetGlobalConfig() const { return mConfig; }
 	void SavePreset(const FString& Name, const FARSSettingsData& Settings);
 	bool DeletePreset(const FString& Name);
+	bool RenamePreset(const FString& OldName, const FString& NewName);
 	const FARSPreset* FindPreset(const FString& Name) const;
+	static FString GetConfigFilePath();
 
 	// Helpers for the widget
 	AFGPlayerController* GetLocalController() const;
@@ -163,20 +184,23 @@ private:
 	FVector GetSelectedBlueprintSizeMeters();
 	void BuildSelectedSettingsRows(TArray<struct FARSInfoPanelRow>& OutRows) const;
 
-	int32 NumSettingsModesForPart(int32 Part) const;
-	EARSSettingsMode SettingsModeForPartIndex(int32 Part, int32 Index) const;
-
-	struct FARSUnderRailEdit
+	//PART CYCLE
+	struct FARSPartRef
 	{
-		float* Length = nullptr;
-		FRotator* Rotation = nullptr;
-		float* ZOffset = nullptr;
-		float* SideOffset = nullptr;
-		float* ForwardOffset = nullptr;
+		// INDEX_NONE for the under-rail
+		int32 PillarSlot = INDEX_NONE;
+		bool bPartnerSide = false;
+
+		bool IsUnderRail() const { return PillarSlot == INDEX_NONE; }
 	};
-	bool IsEditingPartnerUnderRail() const;
-	FARSUnderRailEdit SelectedUnderRailEdit();
-	EARSSettingsMode GetCurrentSettingsMode() const { return SettingsModeForPartIndex(mSelectedPart, mSettingsModeIndex); }
+	void BuildPartCycle(TArray<FARSPartRef>& OutParts) const;
+	int32 NumParts() const;
+	FARSPartRef GetSelectedPart() const;
+	void ClampSelectedPart();
+
+	int32 NumSettingsModesForPart(const FARSPartRef& Part) const;
+	EARSSettingsMode SettingsModeForPartIndex(const FARSPartRef& Part, int32 Index) const;
+	EARSSettingsMode GetCurrentSettingsMode() const { return SettingsModeForPartIndex(GetSelectedPart(), mSettingsModeIndex); }
 
 	FVector GetActiveRailForward();
 	void ApplyArrow(EARSArrow Arrow);
@@ -193,14 +217,20 @@ private:
 	UWidget* FindLiveDismantleRefundsWidget();
 
 	void PlayUISound(TObjectPtr<UAkAudioEvent>& InOutEvent, bool& bInOutLoaded, const TCHAR* EventPath);
+	void PostMenuSound(EARSMenuSound Sound);
+	UFUNCTION() void HandleButtonHovered();
+	UFUNCTION() void HandleButtonClicked();
+	UFUNCTION() void HandleComboOpening();
+	UFUNCTION() void HandleComboSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 	void PlayApplySound();
 	void PlayCycleModeSound();
 
 	void LoadGlobalConfig();
 	void SaveGlobalConfig() const;
-	static FString GetConfigFilePath();
 
 	TSubclassOf<UARSConfigWidget> GetConfigWidgetClass();
+
+	UPROPERTY() TMap<EARSMenuSound, TObjectPtr<UAkAudioEvent>> mMenuSounds;
 
 	UPROPERTY() TObjectPtr<UFGInputMappingContext> mMappingContext;
 	UPROPERTY() TObjectPtr<UInputAction> mOpenUIAction;
@@ -265,8 +295,6 @@ private:
 	int32 mSelectedPart = 0;
 	int32 mSettingsModeIndex = 0;
 	int32 mRotationAxis = 0;
-	// which rail the nearest under-rail stamp sits on
-	bool mEditingPartnerSide = false;
 	FARSSettingsData mWorking;
 	FBoundMappingContextHandle mModeSharedHandle;
 	FBoundMappingContextHandle mModeDismantleHandle;

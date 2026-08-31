@@ -1,26 +1,36 @@
 #include "ARSConfigWidget.h"
 
+#include "ARSCheckRowWidget.h"
 #include "ARSClientManager.h"
 #include "ARSModConfigStruct.h"
+#include "ARSPillarSlotWidget.h"
+#include "ARSPresetRowWidget.h"
 #include "ARSRemoteCallObject.h"
+#include "ARSSegmentedSwitchWidget.h"
+#include "ARSSideModePickerWidget.h"
 #include "ARSSliderWidget.h"
 #include "ARSSubsystem.h"
+#include "ARSUnderRailPanelWidget.h"
 #include "FGBlueprintSubsystem.h"
 #include "FGFactoryBlueprintTypes.h"
 #include "UI/FGWindow.h"
 
 #include "Components/Button.h"
-#include "Components/CheckBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
+#include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
+#include "Animation/WidgetAnimation.h"
+#include "UObject/PropertyPortFlags.h"
 
 namespace
 {
-	const FLinearColor ARSAccent = FLinearColor(FColor(0x4C, 0xBB, 0x17));
-	const FLinearColor ARSNeutral = FLinearColor(FColor(0x3A, 0x3A, 0x3A));
+	//MARQUEE
+	constexpr float MarqueeHoldSeconds = 1.5f;
+	constexpr float MarqueeSpeed = 30.0f;
+	constexpr float MarqueeSlack = 1.0f;
 }
 
 UARSConfigWidget::UARSConfigWidget(const FObjectInitializer& ObjectInitializer)
@@ -31,11 +41,14 @@ UARSConfigWidget::UARSConfigWidget(const FObjectInitializer& ObjectInitializer)
 	mDisablePlayerActions = true;
 	mDisableBuildGunActions = true;
 	mMouseLockMode = EMouseLockMode::DoNotLock;
+	mHideCursorDuringCapture = false;
 	mRestoreFocusWhenLost = true;
 	mDesiredHorizontalAlignment = HAlign_Center;
 	mDesiredVerticalAlignment = VAlign_Center;
 	SetIsFocusable(true);
 }
+
+//SETUP
 
 void UARSConfigWidget::NativeOnInitialized()
 {
@@ -44,166 +57,57 @@ void UARSConfigWidget::NativeOnInitialized()
 	if (HoverTitleText) { mDefaultHoverTitle = HoverTitleText->GetText(); }
 	if (HoverDescriptionText) { mDefaultHoverDescription = HoverDescriptionText->GetText(); }
 
-	mPillarCombos = { Pillar1Combo, Pillar2Combo, Pillar3Combo, Pillar4Combo };
-	mPillarEverySpins = { Pillar1EverySpin, Pillar2EverySpin, Pillar3EverySpin, Pillar4EverySpin };
-	mPillarSpacingSpins = { Pillar1SpacingSpin, Pillar2SpacingSpin, Pillar3SpacingSpin, Pillar4SpacingSpin };
-	mPillarAlignChecks = { Pillar1InclineCheck, Pillar2InclineCheck, Pillar3InclineCheck, Pillar4InclineCheck };
-	mPillarPriorityChecks = { Pillar1PriorityCheck, Pillar2PriorityCheck, Pillar3PriorityCheck, Pillar4PriorityCheck };
-	mPillarLengthTexts = { Pillar1BlueprintLengthText, Pillar2BlueprintLengthText, Pillar3BlueprintLengthText, Pillar4BlueprintLengthText };
-	mPillarWidthTexts = { Pillar1BlueprintWidthText, Pillar2BlueprintWidthText, Pillar3BlueprintWidthText, Pillar4BlueprintWidthText };
-	mPillarHeightTexts = { Pillar1BlueprintHeightText, Pillar2BlueprintHeightText, Pillar3BlueprintHeightText, Pillar4BlueprintHeightText };
-	mPillarYawSpins = { Pillar1YawSpin, Pillar2YawSpin, Pillar3YawSpin, Pillar4YawSpin };
-	mPillarPitchSpins = { Pillar1PitchSpin, Pillar2PitchSpin, Pillar3PitchSpin, Pillar4PitchSpin };
-	mPillarRollSpins = { Pillar1RollSpin, Pillar2RollSpin, Pillar3RollSpin, Pillar4RollSpin };
-	mPillarVerticalSpins = { Pillar1VerticalSpin, Pillar2VerticalSpin, Pillar3VerticalSpin, Pillar4VerticalSpin };
-	mPillarSidewaysSpins = { Pillar1SidewaysSpin, Pillar2SidewaysSpin, Pillar3SidewaysSpin, Pillar4SidewaysSpin };
-	mPillarForwardSpins = { Pillar1ForwardSpin, Pillar2ForwardSpin, Pillar3ForwardSpin, Pillar4ForwardSpin };
-	mPillarSideModeCombos = { Pillar1SideModeCombo, Pillar2SideModeCombo, Pillar3SideModeCombo, Pillar4SideModeCombo };
-	mPillarAutoRollChecks = { Pillar1AutoRollCheck, Pillar2AutoRollCheck, Pillar3AutoRollCheck, Pillar4AutoRollCheck };
-
 	const FARSModConfigStruct ModConfig = FARSModConfigStruct::GetActiveConfig(this);
+	mPositionTiny = ModConfig.PositionStepTiny;
+	mPositionSmall = ModConfig.PositionStepSmall;
+	mPositionLarge = ModConfig.PositionStepLarge;
+	mRotationTiny = ModConfig.RotationStepTiny;
+	mRotationSmall = ModConfig.RotationStepSmall;
+	mRotationLarge = ModConfig.RotationStepLarge;
 
-	auto ConfigureSlider = [&ModConfig](UARSSliderWidget* Slider, float Min, float Max, float Step, int32 Digits, bool bAllowFineStep = false)
+	if (TrackSeparationSlider)
 	{
-		if (Slider)
-		{
-			Slider->Configure(Min, Max, Step, Digits, bAllowFineStep,
-				ModConfig.PositionStepTiny, ModConfig.PositionStepSmall, ModConfig.PositionStepLarge);
-		}
-	};
-	auto ConfigureRotationSlider = [&ModConfig](UARSSliderWidget* Slider)
-	{
-		if (Slider)
-		{
-			Slider->Configure(-180.0f, 180.0f, 15.0f, 1, /*fine*/ true,
-				ModConfig.RotationStepTiny, ModConfig.RotationStepSmall, ModConfig.RotationStepLarge);
-		}
-	};
-	ConfigureSlider(UnderLengthSpin, 0.5f, 48.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureRotationSlider(UnderYawSpin);
-	ConfigureRotationSlider(UnderPitchSpin);
-	ConfigureRotationSlider(UnderRollSpin);
-	ConfigureSlider(UnderVerticalSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureSlider(UnderSidewaysSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureSlider(UnderForwardSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	for (UARSSliderWidget* EverySpin : mPillarEverySpins)
-	{
-		ConfigureSlider(EverySpin, 1.0f, 100.0f, 1.0f, 0);
+		// signed separation
+		TrackSeparationSlider->Configure(-20.0f, 20.0f, 1.0f, 2, /*fine*/ true, mPositionTiny, mPositionSmall, mPositionLarge);
+		TrackSeparationSlider->SetBipolar(true);
+		TrackSeparationSlider->SetUnit(NSLOCTEXT("AutoRailSupports", "UnitMeters", "m"));
 	}
-	for (UARSSliderWidget* SpacingSpin : mPillarSpacingSpins)
+
+	if (MainUnderRailPanel)
 	{
-		ConfigureSlider(SpacingSpin, 0.0f, 100.0f, 1.0f, 0);
+		MainUnderRailPanel->SetupPanel(/*bPartner*/ false, mPositionTiny, mPositionSmall, mPositionLarge,
+			mRotationTiny, mRotationSmall, mRotationLarge);
+		MainUnderRailPanel->OnSideEdited.AddDynamic(this, &UARSConfigWidget::OnUnderRailSideEdited);
+		MainUnderRailPanel->OnSideBlueprintPicked.AddDynamic(this, &UARSConfigWidget::OnUnderRailBlueprintPicked);
 	}
-	for (int32 SlotIndex = 0; SlotIndex < FARSSettingsData::NumPillarSlots; SlotIndex++)
+	if (PartnerUnderRailPanel)
 	{
-		ConfigureRotationSlider(mPillarYawSpins[SlotIndex]);
-		ConfigureRotationSlider(mPillarPitchSpins[SlotIndex]);
-		ConfigureRotationSlider(mPillarRollSpins[SlotIndex]);
-		ConfigureSlider(mPillarVerticalSpins[SlotIndex], -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-		ConfigureSlider(mPillarSidewaysSpins[SlotIndex], -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-		ConfigureSlider(mPillarForwardSpins[SlotIndex], -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	}
-	// signed separation
-	ConfigureSlider(TrackSeparationSpin, -20.0f, 20.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureSlider(PartnerLengthSpin, 0.5f, 48.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureRotationSlider(PartnerYawSpin);
-	ConfigureRotationSlider(PartnerPitchSpin);
-	ConfigureRotationSlider(PartnerRollSpin);
-	ConfigureSlider(PartnerVerticalSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureSlider(PartnerSidewaysSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	ConfigureSlider(PartnerForwardSpin, -100.0f, 100.0f, 1.0f, 2, /*fine*/ true);
-	FillSideModeOptions(UnderSideModeCombo);
-	for (UComboBoxString* SideModeCombo : mPillarSideModeCombos)
-	{
-		FillSideModeOptions(SideModeCombo);
+		PartnerUnderRailPanel->SetupPanel(/*bPartner*/ true, mPositionTiny, mPositionSmall, mPositionLarge,
+			mRotationTiny, mRotationSmall, mRotationLarge);
+		PartnerUnderRailPanel->OnSideEdited.AddDynamic(this, &UARSConfigWidget::OnUnderRailSideEdited);
+		PartnerUnderRailPanel->OnSideBlueprintPicked.AddDynamic(this, &UARSConfigWidget::OnUnderRailBlueprintPicked);
 	}
 
 	if (MasterButton) { MasterButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnMasterToggleClicked); }
+	BindMenuSounds();
 	if (CloseButton) { CloseButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnCloseClicked); }
+	if (TrackLayoutSwitch) { TrackLayoutSwitch->OnSegmentSelected.AddDynamic(this, &UARSConfigWidget::OnTrackLayoutSelected); }
+	if (TrackSeparationSlider) { TrackSeparationSlider->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnTrackSeparationCommitted); }
+	if (CombineBlueprintCheck) { CombineBlueprintCheck->OnCheckChanged.AddDynamic(this, &UARSConfigWidget::OnCombineBlueprintChanged); }
+	if (UnderRailSideModeRow) { UnderRailSideModeRow->OnSideModePicked.AddDynamic(this, &UARSConfigWidget::OnUnderRailSideModeChanged); }
+	if (SplitSidesCheck) { SplitSidesCheck->OnCheckChanged.AddDynamic(this, &UARSConfigWidget::OnSplitSidesChanged); }
+	if (AddPillarButton) { AddPillarButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnAddPillarClicked); }
 
-	if (UnderBlueprintCombo) { UnderBlueprintCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnUnderBlueprintChanged); }
-	if (UnderLengthSpin) { UnderLengthSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderLengthCommitted); }
-	if (UnderYawSpin) { UnderYawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderYawCommitted); }
-	if (UnderPitchSpin) { UnderPitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderPitchCommitted); }
-	if (UnderRollSpin) { UnderRollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderRollCommitted); }
-	if (UnderVerticalSpin) { UnderVerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderVOffsetCommitted); }
-	if (UnderSidewaysSpin) { UnderSidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderHOffsetCommitted); }
-	if (UnderForwardSpin) { UnderForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnUnderFOffsetCommitted); }
-	if (UnderCoverGapCheck) { UnderCoverGapCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnUnderCoverGapChanged); }
-	if (CombineBlueprintCheck) { CombineBlueprintCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnCombineBlueprintChanged); }
+	if (PresetHeaderButton) { PresetHeaderButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetHeaderClicked); }
+	if (PresetClickCatcher) { PresetClickCatcher->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetClickCatcherClicked); }
+	if (PresetSaveButton) { PresetSaveButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetSaveClicked); }
+	if (PresetNameBox) { PresetNameBox->OnTextChanged.AddDynamic(this, &UARSConfigWidget::OnPresetNameTextChanged); }
+	if (PresetResetButton) { PresetResetButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetResetClicked); }
+	if (PresetConfirmButton) { PresetConfirmButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetConfirmClicked); }
+	if (PresetCancelButton) { PresetCancelButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnPresetCancelClicked); }
+	CloseConfirmation();
 
-	if (DoubleRailsCheck) { DoubleRailsCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnDoubleRailsChanged); }
-	if (TrackSeparationSpin) { TrackSeparationSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnTrackSeparationCommitted); }
-	if (UnderSideModeCombo) { UnderSideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnUnderSideModeChanged); }
-	if (UnderAutoRollCheck) { UnderAutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnUnderAutoRollChanged); }
-	if (Pillar1SideModeCombo) { Pillar1SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged0); }
-	if (Pillar2SideModeCombo) { Pillar2SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged1); }
-	if (Pillar3SideModeCombo) { Pillar3SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged2); }
-	if (Pillar4SideModeCombo) { Pillar4SideModeCombo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarSideModeChanged3); }
-	if (SplitUnderRailSidesCheck) { SplitUnderRailSidesCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnSplitUnderRailSidesChanged); }
-	if (PartnerLengthSpin) { PartnerLengthSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerLengthCommitted); }
-	if (PartnerCoverGapCheck) { PartnerCoverGapCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPartnerCoverGapChanged); }
-	if (PartnerYawSpin) { PartnerYawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerYawCommitted); }
-	if (PartnerPitchSpin) { PartnerPitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerPitchCommitted); }
-	if (PartnerRollSpin) { PartnerRollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerRollCommitted); }
-	if (PartnerVerticalSpin) { PartnerVerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerVOffsetCommitted); }
-	if (PartnerSidewaysSpin) { PartnerSidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerHOffsetCommitted); }
-	if (PartnerForwardSpin) { PartnerForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPartnerFOffsetCommitted); }
-	if (Pillar1AutoRollCheck) { Pillar1AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged0); }
-	if (Pillar2AutoRollCheck) { Pillar2AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged1); }
-	if (Pillar3AutoRollCheck) { Pillar3AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged2); }
-	if (Pillar4AutoRollCheck) { Pillar4AutoRollCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAutoRollChanged3); }
-
-	if (Pillar1Combo) { Pillar1Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged0); }
-	if (Pillar2Combo) { Pillar2Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged1); }
-	if (Pillar3Combo) { Pillar3Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged2); }
-	if (Pillar4Combo) { Pillar4Combo->OnSelectionChanged.AddDynamic(this, &UARSConfigWidget::OnPillarBlueprintChanged3); }
-	if (Pillar1EverySpin) { Pillar1EverySpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarEveryCommitted0); }
-	if (Pillar2EverySpin) { Pillar2EverySpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarEveryCommitted1); }
-	if (Pillar3EverySpin) { Pillar3EverySpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarEveryCommitted2); }
-	if (Pillar4EverySpin) { Pillar4EverySpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarEveryCommitted3); }
-	if (Pillar1SpacingSpin) { Pillar1SpacingSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarSpacingCommitted0); }
-	if (Pillar2SpacingSpin) { Pillar2SpacingSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarSpacingCommitted1); }
-	if (Pillar3SpacingSpin) { Pillar3SpacingSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarSpacingCommitted2); }
-	if (Pillar4SpacingSpin) { Pillar4SpacingSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarSpacingCommitted3); }
-	if (Pillar1InclineCheck) { Pillar1InclineCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAlignChanged0); }
-	if (Pillar2InclineCheck) { Pillar2InclineCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAlignChanged1); }
-	if (Pillar3InclineCheck) { Pillar3InclineCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAlignChanged2); }
-	if (Pillar4InclineCheck) { Pillar4InclineCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarAlignChanged3); }
-	if (Pillar1PriorityCheck) { Pillar1PriorityCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarPriorityChanged0); }
-	if (Pillar2PriorityCheck) { Pillar2PriorityCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarPriorityChanged1); }
-	if (Pillar3PriorityCheck) { Pillar3PriorityCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarPriorityChanged2); }
-	if (Pillar4PriorityCheck) { Pillar4PriorityCheck->OnCheckStateChanged.AddDynamic(this, &UARSConfigWidget::OnPillarPriorityChanged3); }
-
-	if (Pillar1YawSpin) { Pillar1YawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarYawCommitted0); }
-	if (Pillar2YawSpin) { Pillar2YawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarYawCommitted1); }
-	if (Pillar3YawSpin) { Pillar3YawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarYawCommitted2); }
-	if (Pillar4YawSpin) { Pillar4YawSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarYawCommitted3); }
-	if (Pillar1PitchSpin) { Pillar1PitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarPitchCommitted0); }
-	if (Pillar2PitchSpin) { Pillar2PitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarPitchCommitted1); }
-	if (Pillar3PitchSpin) { Pillar3PitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarPitchCommitted2); }
-	if (Pillar4PitchSpin) { Pillar4PitchSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarPitchCommitted3); }
-	if (Pillar1RollSpin) { Pillar1RollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarRollCommitted0); }
-	if (Pillar2RollSpin) { Pillar2RollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarRollCommitted1); }
-	if (Pillar3RollSpin) { Pillar3RollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarRollCommitted2); }
-	if (Pillar4RollSpin) { Pillar4RollSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarRollCommitted3); }
-	if (Pillar1VerticalSpin) { Pillar1VerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarVOffsetCommitted0); }
-	if (Pillar2VerticalSpin) { Pillar2VerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarVOffsetCommitted1); }
-	if (Pillar3VerticalSpin) { Pillar3VerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarVOffsetCommitted2); }
-	if (Pillar4VerticalSpin) { Pillar4VerticalSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarVOffsetCommitted3); }
-	if (Pillar1SidewaysSpin) { Pillar1SidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarHOffsetCommitted0); }
-	if (Pillar2SidewaysSpin) { Pillar2SidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarHOffsetCommitted1); }
-	if (Pillar3SidewaysSpin) { Pillar3SidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarHOffsetCommitted2); }
-	if (Pillar4SidewaysSpin) { Pillar4SidewaysSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarHOffsetCommitted3); }
-	if (Pillar1ForwardSpin) { Pillar1ForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarFOffsetCommitted0); }
-	if (Pillar2ForwardSpin) { Pillar2ForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarFOffsetCommitted1); }
-	if (Pillar3ForwardSpin) { Pillar3ForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarFOffsetCommitted2); }
-	if (Pillar4ForwardSpin) { Pillar4ForwardSpin->OnValueCommitted.AddDynamic(this, &UARSConfigWidget::OnPillarFOffsetCommitted3); }
-
-	if (SavePresetButton) { SavePresetButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnSavePresetClicked); }
-	if (LoadPresetButton) { LoadPresetButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnApplyPresetClicked); }
-	if (DeletePresetButton) { DeletePresetButton->OnClicked.AddDynamic(this, &UARSConfigWidget::OnDeletePresetClicked); }
-
+	SetPresetMenuOpen(false);
 
 	if (WindowFrame)
 	{
@@ -217,11 +121,21 @@ void UARSConfigWidget::NativeOnInitialized()
 	}
 }
 
+void UARSConfigWidget::BindMenuSounds()
+{
+	for (UButton* Button : { MasterButton.Get(), CloseButton.Get(), AddPillarButton.Get(),
+		PresetHeaderButton.Get(), PresetSaveButton.Get(), PresetResetButton.Get(),
+		PresetConfirmButton.Get(), PresetCancelButton.Get() })
+	{
+		AARSClientManager::BindButtonSounds(this, Button);
+	}
+}
+
 void UARSConfigWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	RefreshBlueprintOptions();
-	RefreshPresetOptions();
+	RebuildPresetList();
 
 	bHaveServerData = false;
 	if (const AARSClientManager* ClientManager = GetClientManager())
@@ -229,7 +143,7 @@ void UARSConfigWidget::NativeConstruct()
 		if (ClientManager->HasServerSettings())
 		{
 			mWorking = ClientManager->GetSettings();
-			mWorking.EnsureSlotArraySizes();
+			mWorking.Normalize();
 			mSeenRevision = ClientManager->GetSettingsRevision();
 			bHaveServerData = true;
 			PushWorkingToControls();
@@ -273,6 +187,8 @@ void UARSConfigWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
+	TickPresetNameMarquee(InDeltaTime);
+
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		if (!PlayerController->bShowMouseCursor)
@@ -296,7 +212,7 @@ void UARSConfigWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 			return;
 		}
 		mWorking = ClientManager->GetSettings();
-		mWorking.EnsureSlotArraySizes();
+		mWorking.Normalize();
 		mSeenRevision = ClientManager->GetSettingsRevision();
 		bPendingRefresh = false;
 		if (!bHaveServerData)
@@ -314,62 +230,171 @@ AARSClientManager* UARSConfigWidget::GetClientManager() const
 	return AARSClientManager::Get(GetWorld());
 }
 
-void UARSConfigWidget::UpdateBlueprintDimsText()
+//CONTROLS
+
+void UARSConfigWidget::PushWorkingToControls()
 {
-	UpdateDimsTextFor(mWorking.UnderRailBlueprintName, UnderBlueprintLengthText, UnderBlueprintWidthText, UnderBlueprintHeightText);
-	for (int32 SlotIndex = 0; SlotIndex < FARSSettingsData::NumPillarSlots; SlotIndex++)
+	TGuardValue<bool> Guard(bSuppressEvents, true);
+
+	SetMasterButtonState(mWorking.bEnabled);
+	if (TrackLayoutSwitch) { TrackLayoutSwitch->SetSelectedIndex(mWorking.bDoubleRails ? 1 : 0); }
+	if (TrackSeparationSlider) { TrackSeparationSlider->SetValue(mWorking.TrackSeparation / 100.0f); }
+	if (CombineBlueprintCheck) { CombineBlueprintCheck->SetChecked(mWorking.bCombineIntoOneBlueprint); }
+	if (UnderRailSideModeRow) { UnderRailSideModeRow->SetSideMode(mWorking.UnderRailSideMode); }
+	if (SplitSidesCheck) { SplitSidesCheck->SetChecked(mWorking.bSplitUnderRailSides); }
+
+	if (MainUnderRailPanel) { MainUnderRailPanel->PushSide(mWorking.GetUnderRailSide(/*bPartner*/ false)); }
+	if (PartnerUnderRailPanel) { PartnerUnderRailPanel->PushSide(mWorking.GetUnderRailSide(/*bPartner*/ true)); }
+
+	RebuildPillarList();
+	UpdateConditionalVisibility();
+	UpdateBlueprintInfo();
+	UpdatePresetHeader();
+}
+
+void UARSConfigWidget::RebuildPillarList()
+{
+	const int32 SlotLimit = AARSSubsystem::GetMaxPillarSlots(this);
+	mWorking.ClampPillarSlotsTo(SlotLimit);
+	if (!PillarSlotBox || !PillarSlotWidgetClass)
 	{
-		UpdateDimsTextFor(mWorking.PillarBlueprintNames[SlotIndex],
-			mPillarLengthTexts.IsValidIndex(SlotIndex) ? mPillarLengthTexts[SlotIndex] : nullptr,
-			mPillarWidthTexts.IsValidIndex(SlotIndex) ? mPillarWidthTexts[SlotIndex] : nullptr,
-			mPillarHeightTexts.IsValidIndex(SlotIndex) ? mPillarHeightTexts[SlotIndex] : nullptr);
+		return;
+	}
+	const int32 NumSlots = mWorking.NumPillarSlots();
+	while (mSlotWidgets.Num() > NumSlots)
+	{
+		if (UARSPillarSlotWidget* Card = mSlotWidgets.Pop())
+		{
+			Card->RemoveFromParent();
+		}
+	}
+	while (mSlotWidgets.Num() < NumSlots)
+	{
+		UARSPillarSlotWidget* Card = CreateWidget<UARSPillarSlotWidget>(this, PillarSlotWidgetClass);
+		if (!Card)
+		{
+			break;
+		}
+		Card->SetupCard(mSlotWidgets.Num(), mPositionTiny, mPositionSmall, mPositionLarge,
+			mRotationTiny, mRotationSmall, mRotationLarge);
+		Card->OnSlotEdited.AddDynamic(this, &UARSConfigWidget::OnSlotEdited);
+		Card->OnSlotBlueprintPicked.AddDynamic(this, &UARSConfigWidget::OnSlotBlueprintPicked);
+		Card->OnSlotMoveRequested.AddDynamic(this, &UARSConfigWidget::OnSlotMoveRequested);
+		Card->OnSlotRemoveRequested.AddDynamic(this, &UARSConfigWidget::OnSlotRemoveRequested);
+		PillarSlotBox->AddChild(Card);
+		mSlotWidgets.Add(Card);
+	}
+
+	RefreshBlueprintOptions();
+	for (int32 SlotIndex = 0; SlotIndex < mSlotWidgets.Num(); SlotIndex++)
+	{
+		UARSPillarSlotWidget* Card = mSlotWidgets[SlotIndex];
+		if (!Card)
+		{
+			continue;
+		}
+		Card->SetListPosition(SlotIndex, NumSlots, SlotIndex > 0, SlotIndex < NumSlots - 1);
+		Card->SetDoubleRailsControlsVisible(mWorking.bDoubleRails);
+		Card->PushSlot(mWorking.PillarSlots[SlotIndex]);
+	}
+
+	if (AddPillarButton)
+	{
+		AddPillarButton->SetVisibility(mWorking.CanAddPillarSlot(SlotLimit) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (PillarCountText)
+	{
+		PillarCountText->SetText(FText::Format(PillarCountFormat,
+			FText::AsNumber(NumSlots), FText::AsNumber(SlotLimit)));
 	}
 }
 
-void UARSConfigWidget::UpdateDimsTextFor(const FString& BlueprintName, UTextBlock* LengthText, UTextBlock* WidthText, UTextBlock* HeightText)
+void UARSConfigWidget::UpdateConditionalVisibility()
 {
-	if (!BlueprintName.IsEmpty() && !mMeasuredSizes.Contains(BlueprintName))
+	const ESlateVisibility DoubleOnly = mWorking.bDoubleRails ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	if (TrackSeparationSlider) { TrackSeparationSlider->SetVisibility(DoubleOnly); }
+	if (TrackSeparationHint) { TrackSeparationHint->SetVisibility(DoubleOnly); }
+	if (UnderRailSideModeRow) { UnderRailSideModeRow->SetVisibility(DoubleOnly); }
+	if (SplitSidesCheck)
 	{
-		RequestBlueprintSize(BlueprintName);
+		SplitSidesCheck->SetVisibility(DoubleOnly);
+		SplitSidesCheck->SetDisabled(mWorking.UnderRailSideMode == EARSSideMode::Center);
 	}
-	FString Length = TEXT("-");
-	FString Width = TEXT("-");
-	FString Height = TEXT("-");
-	if (!BlueprintName.IsEmpty())
+	if (PartnerUnderRailPanel)
 	{
-		if (const FVector* Size = mMeasuredSizes.Find(BlueprintName))
-		{
-			if (Size->IsNearlyZero())
-			{
-				Length = Width = Height = TEXT("?"); // measurement failed
-			}
-			else
-			{
-				Length = FString::Printf(TEXT("%.1f m"), Size->X);
-				Width = FString::Printf(TEXT("%.1f m"), Size->Y);
-				Height = FString::Printf(TEXT("%.1f m"), Size->Z);
-			}
-		}
-		else
-		{
-			Length = Width = Height = TEXT("..."); // multiplayer, searching for the server's measurement
-		}
+		PartnerUnderRailPanel->SetVisibility(mWorking.HasSplitUnderRailSides()
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		PartnerUnderRailPanel->SetBlueprintPickerDisabled(mWorking.PartnerSharesBlueprint());
 	}
-	auto SetDim = [](UTextBlock* Text, const TCHAR* Label, const FString& Value)
+
+	const FText MainHeader = mWorking.HasSplitUnderRailSides() ? SplitMainHeader : UnderRailHeader;
+	if (MainUnderRailPanel) { MainUnderRailPanel->SetHeader(MainHeader); }
+	if (PartnerUnderRailPanel) { PartnerUnderRailPanel->SetHeader(PartnerHeader); }
+}
+
+float UARSConfigWidget::UnderRailStepCm() const
+{
+	return FMath::Max(mWorking.UnderRailLength, 50.0f);
+}
+
+FText UARSConfigWidget::DimensionsTextFor(const FString& BlueprintName) const
+{
+	if (BlueprintName.IsEmpty())
 	{
-		if (Text)
+		return FText::GetEmpty();
+	}
+	const FVector* Size = mMeasuredSizes.Find(BlueprintName);
+	if (!Size)
+	{
+		return DimensionsPendingText;
+	}
+	if (Size->IsNearlyZero())
+	{
+		return DimensionsUnknownText;
+	}
+	return FText::FromString(FString::Printf(TEXT("%.1f x %.1f x %.1f m"), Size->X, Size->Y, Size->Z));
+}
+
+void UARSConfigWidget::UpdateBlueprintInfo()
+{
+	auto UpdatePanel = [this](UARSUnderRailPanelWidget* Panel, bool bPartner)
+	{
+		if (!Panel)
 		{
-			Text->SetText(FText::FromString(FString::Printf(TEXT("%s: %s"), Label, *Value)));
+			return;
 		}
+		const FARSUnderRailSide Side = mWorking.GetUnderRailSide(bPartner);
+		RequestBlueprintSize(Side.BlueprintName);
+		Panel->SetDimensions(DimensionsTextFor(Side.BlueprintName));
+
+		float BlueprintLengthMeters = 0.0f;
+		if (const FVector* Size = mMeasuredSizes.Find(Side.BlueprintName))
+		{
+			BlueprintLengthMeters = Size->X;
+		}
+		const bool bWarn = !Side.BlueprintName.IsEmpty()
+			&& AARSSubsystem::ShouldWarnStampCount(Side.Length, BlueprintLengthMeters);
+		Panel->SetLengthWarning(bWarn, AARSSubsystem::GetStampCountWarningText());
 	};
-	SetDim(LengthText, TEXT("Length"), Length);
-	SetDim(WidthText, TEXT("Width"), Width);
-	SetDim(HeightText, TEXT("Height"), Height);
+	UpdatePanel(MainUnderRailPanel, /*bPartner*/ false);
+	UpdatePanel(PartnerUnderRailPanel, /*bPartner*/ true);
+
+	for (int32 SlotIndex = 0; SlotIndex < mSlotWidgets.Num(); SlotIndex++)
+	{
+		UARSPillarSlotWidget* Card = mSlotWidgets[SlotIndex];
+		if (!Card || !mWorking.PillarSlots.IsValidIndex(SlotIndex))
+		{
+			continue;
+		}
+		const FARSPillarSlotData& SlotData = mWorking.PillarSlots[SlotIndex];
+		RequestBlueprintSize(SlotData.BlueprintName);
+		Card->SetDimensions(DimensionsTextFor(SlotData.BlueprintName));
+	}
 }
 
 void UARSConfigWidget::RequestBlueprintSize(const FString& BlueprintName)
 {
-	if (BlueprintName.IsEmpty() || mRequestedSizeNames.Contains(BlueprintName))
+	if (BlueprintName.IsEmpty() || mMeasuredSizes.Contains(BlueprintName) || mRequestedSizeNames.Contains(BlueprintName))
 	{
 		return;
 	}
@@ -388,41 +413,20 @@ void UARSConfigWidget::HandleBlueprintSize(const FString& BlueprintName, const F
 	mRequestedSizeNames.Remove(BlueprintName);
 	mMeasuredSizes.Add(BlueprintName, SizeMeters);
 
-	if (bAutoLengthOnSize && BlueprintName == mWorking.UnderRailBlueprintName && SizeMeters.X > 0.0f)
+	if (BlueprintName == mAutoLengthBlueprint && SizeMeters.X > 0.0f)
 	{
-		mWorking.UnderRailLength = SizeMeters.X * 100.0f;
-		if (UnderLengthSpin)
+		FARSUnderRailSide Side = mWorking.GetUnderRailSide(bAutoLengthForPartner);
+		Side.Length = SizeMeters.X * 100.0f;
+		mWorking.SetUnderRailSide(bAutoLengthForPartner, Side);
+		UARSUnderRailPanelWidget* Panel = bAutoLengthForPartner ? PartnerUnderRailPanel : MainUnderRailPanel;
+		if (Panel)
 		{
-			UnderLengthSpin->SetValue(SizeMeters.X);
+			Panel->PushSide(Side);
 		}
+		mAutoLengthBlueprint.Reset();
 		SendSettings();
-		bAutoLengthOnSize = false;
 	}
-	UpdateBlueprintDimsText();
-	UpdateLengthWarning();
-}
-
-void UARSConfigWidget::UpdateLengthWarning()
-{
-	if (!UnderLengthWarning)
-	{
-		return;
-	}
-	bool bWarn = false;
-	if (!mWorking.UnderRailBlueprintName.IsEmpty())
-	{
-		float BlueprintLengthMeters = 0.0f;
-		if (const FVector* Size = mMeasuredSizes.Find(mWorking.UnderRailBlueprintName))
-		{
-			BlueprintLengthMeters = Size->X;
-		}
-		bWarn = AARSSubsystem::ShouldWarnStampCount(mWorking.UnderRailLength, BlueprintLengthMeters);
-	}
-	UnderLengthWarning->SetVisibility(bWarn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	if (bWarn)
-	{
-		UnderLengthWarning->SetToolTipText(AARSSubsystem::GetStampCountWarningText());
-	}
+	UpdateBlueprintInfo();
 }
 
 void UARSConfigWidget::RefreshBlueprintOptions()
@@ -430,7 +434,7 @@ void UARSConfigWidget::RefreshBlueprintOptions()
 	TArray<FString> Options;
 	Options.Add(TEXT("None"));
 	TArray<UFGBlueprintDescriptor*> Descriptors;
-	AFGBlueprintSubsystem::GetBlueprintDescriptors(Descriptors, const_cast<UARSConfigWidget*>(this));
+	AFGBlueprintSubsystem::GetBlueprintDescriptors(Descriptors, this);
 	for (UFGBlueprintDescriptor* Descriptor : Descriptors)
 	{
 		if (Descriptor)
@@ -440,43 +444,14 @@ void UARSConfigWidget::RefreshBlueprintOptions()
 	}
 	Options.Sort([](const FString& A, const FString& B) { return A == TEXT("None") ? true : (B == TEXT("None") ? false : A < B); });
 
-	auto FillCombo = [&Options](UComboBoxString* Combo)
+	if (MainUnderRailPanel) { MainUnderRailPanel->SetBlueprintOptions(Options); }
+	if (PartnerUnderRailPanel) { PartnerUnderRailPanel->SetBlueprintOptions(Options); }
+	for (UARSPillarSlotWidget* Card : mSlotWidgets)
 	{
-		if (!Combo)
+		if (Card)
 		{
-			return;
+			Card->SetBlueprintOptions(Options);
 		}
-		Combo->ClearOptions();
-		for (const FString& Option : Options)
-		{
-			Combo->AddOption(Option);
-		}
-	};
-	FillCombo(UnderBlueprintCombo);
-	for (UComboBoxString* Combo : mPillarCombos)
-	{
-		FillCombo(Combo);
-	}
-}
-
-void UARSConfigWidget::RefreshPresetOptions()
-{
-	if (!PresetCombo)
-	{
-		return;
-	}
-	const FString Previous = PresetCombo->GetSelectedOption();
-	PresetCombo->ClearOptions();
-	if (const AARSClientManager* Manager = GetClientManager())
-	{
-		for (const FARSPreset& Preset : Manager->GetGlobalConfig().Presets)
-		{
-			PresetCombo->AddOption(Preset.Name);
-		}
-	}
-	if (!Previous.IsEmpty())
-	{
-		PresetCombo->SetSelectedOption(Previous);
 	}
 }
 
@@ -484,96 +459,17 @@ void UARSConfigWidget::SetMasterButtonState(bool bEnabled)
 {
 	if (MasterButtonText)
 	{
-		MasterButtonText->SetText(FText::FromString(bEnabled ? TEXT("ENABLED") : TEXT("DISABLED")));
+		MasterButtonText->SetText(bEnabled ? MasterOnLabel : MasterOffLabel);
+		MasterButtonText->SetColorAndOpacity(FSlateColor(bEnabled ? MasterOnTextColor : MasterOffTextColor));
 	}
 	if (MasterButton)
 	{
-		MasterButton->SetBackgroundColor(bEnabled ? ARSAccent : ARSNeutral);
+		MasterButton->SetBackgroundColor(bEnabled ? MasterOnColor : MasterOffColor);
 	}
-}
-
-void UARSConfigWidget::PushWorkingToControls()
-{
-	TGuardValue<bool> Guard(bSuppressEvents, true);
-
-	auto SelectBlueprint = [](UComboBoxString* Combo, const FString& Name)
+	if (MasterHelperText)
 	{
-		if (!Combo)
-		{
-			return;
-		}
-		const FString Wanted = Name.IsEmpty() ? TEXT("None") : Name;
-		if (Combo->FindOptionIndex(Wanted) == INDEX_NONE)
-		{
-			Combo->AddOption(Wanted); // blueprint is missing from this save, but keep the name visible
-		}
-		Combo->SetSelectedOption(Wanted);
-	};
-	auto SetSpin = [](UARSSliderWidget* Spin, float Value)
-	{
-		if (Spin)
-		{
-			Spin->SetValue(Value);
-		}
-	};
-
-	SetMasterButtonState(mWorking.bEnabled);
-	SelectBlueprint(UnderBlueprintCombo, mWorking.UnderRailBlueprintName);
-	SetSpin(UnderLengthSpin, mWorking.UnderRailLength / 100.0f);
-	SetSpin(UnderYawSpin, mWorking.UnderRailRotationOffset.Yaw);
-	SetSpin(UnderPitchSpin, mWorking.UnderRailRotationOffset.Pitch);
-	SetSpin(UnderRollSpin, mWorking.UnderRailRotationOffset.Roll);
-	SetSpin(UnderVerticalSpin, mWorking.UnderRailZOffset / 100.0f);
-	SetSpin(UnderSidewaysSpin, mWorking.UnderRailSideOffset / 100.0f);
-	SetSpin(UnderForwardSpin, mWorking.UnderRailForwardOffset / 100.0f);
-	if (UnderCoverGapCheck) { UnderCoverGapCheck->SetIsChecked(mWorking.bCoverEndGap); }
-	if (CombineBlueprintCheck) { CombineBlueprintCheck->SetIsChecked(mWorking.bCombineIntoOneBlueprint); }
-	if (DoubleRailsCheck) { DoubleRailsCheck->SetIsChecked(mWorking.bDoubleRails); }
-	if (UnderAutoRollCheck) { UnderAutoRollCheck->SetIsChecked(mWorking.bUnderRailAutoRoll); }
-	if (UnderSideModeCombo) { UnderSideModeCombo->SetSelectedOption(SideModeToOption(mWorking.UnderRailSideMode)); }
-	SetSpin(TrackSeparationSpin, mWorking.TrackSeparation / 100.0f);
-	if (SplitUnderRailSidesCheck) { SplitUnderRailSidesCheck->SetIsChecked(mWorking.bSplitUnderRailSides); }
-	if (PartnerCoverGapCheck) { PartnerCoverGapCheck->SetIsChecked(mWorking.UnderRailPartner.bCoverEndGap); }
-	SetSpin(PartnerLengthSpin, mWorking.UnderRailPartner.Length / 100.0f);
-	SetSpin(PartnerYawSpin, mWorking.UnderRailPartner.RotationOffset.Yaw);
-	SetSpin(PartnerPitchSpin, mWorking.UnderRailPartner.RotationOffset.Pitch);
-	SetSpin(PartnerRollSpin, mWorking.UnderRailPartner.RotationOffset.Roll);
-	SetSpin(PartnerVerticalSpin, mWorking.UnderRailPartner.ZOffset / 100.0f);
-	SetSpin(PartnerSidewaysSpin, mWorking.UnderRailPartner.SideOffset / 100.0f);
-	SetSpin(PartnerForwardSpin, mWorking.UnderRailPartner.ForwardOffset / 100.0f);
-
-	for (int32 SlotIndex = 0; SlotIndex < FARSSettingsData::NumPillarSlots; SlotIndex++)
-	{
-		SelectBlueprint(mPillarCombos.IsValidIndex(SlotIndex) ? mPillarCombos[SlotIndex] : nullptr, mWorking.PillarBlueprintNames[SlotIndex]);
-		SetSpin(mPillarEverySpins.IsValidIndex(SlotIndex) ? mPillarEverySpins[SlotIndex] : nullptr, mWorking.PillarEveryNs[SlotIndex]);
-		SetSpin(mPillarSpacingSpins.IsValidIndex(SlotIndex) ? mPillarSpacingSpins[SlotIndex] : nullptr, mWorking.PillarSpacingOffsets[SlotIndex]);
-		if (mPillarAlignChecks.IsValidIndex(SlotIndex) && mPillarAlignChecks[SlotIndex])
-		{
-			mPillarAlignChecks[SlotIndex]->SetIsChecked(mWorking.PillarAlignToRail[SlotIndex]);
-		}
-		if (mPillarPriorityChecks.IsValidIndex(SlotIndex) && mPillarPriorityChecks[SlotIndex])
-		{
-			mPillarPriorityChecks[SlotIndex]->SetIsChecked(mWorking.PillarPreventOverlap[SlotIndex]);
-		}
-		const FRotator PillarRotation = mWorking.GetPillarRotation(SlotIndex);
-		SetSpin(mPillarYawSpins.IsValidIndex(SlotIndex) ? mPillarYawSpins[SlotIndex] : nullptr, PillarRotation.Yaw);
-		SetSpin(mPillarPitchSpins.IsValidIndex(SlotIndex) ? mPillarPitchSpins[SlotIndex] : nullptr, PillarRotation.Pitch);
-		SetSpin(mPillarRollSpins.IsValidIndex(SlotIndex) ? mPillarRollSpins[SlotIndex] : nullptr, PillarRotation.Roll);
-		SetSpin(mPillarVerticalSpins.IsValidIndex(SlotIndex) ? mPillarVerticalSpins[SlotIndex] : nullptr, mWorking.PillarZOffsets[SlotIndex] / 100.0f);
-		SetSpin(mPillarSidewaysSpins.IsValidIndex(SlotIndex) ? mPillarSidewaysSpins[SlotIndex] : nullptr, mWorking.PillarSideOffsets[SlotIndex] / 100.0f);
-		SetSpin(mPillarForwardSpins.IsValidIndex(SlotIndex) ? mPillarForwardSpins[SlotIndex] : nullptr, mWorking.PillarForwardOffsets[SlotIndex] / 100.0f);
-		if (mPillarSideModeCombos.IsValidIndex(SlotIndex) && mPillarSideModeCombos[SlotIndex])
-		{
-			mPillarSideModeCombos[SlotIndex]->SetSelectedOption(SideModeToOption(mWorking.PillarSideModes[SlotIndex]));
-		}
-		if (mPillarAutoRollChecks.IsValidIndex(SlotIndex) && mPillarAutoRollChecks[SlotIndex])
-		{
-			mPillarAutoRollChecks[SlotIndex]->SetIsChecked(mWorking.PillarAutoRoll[SlotIndex]);
-		}
+		MasterHelperText->SetText(bEnabled ? FText::GetEmpty() : MasterOffHelp);
 	}
-
-	UpdateBlueprintDimsText();
-	UpdateLengthWarning();
 }
 
 void UARSConfigWidget::SendSettings()
@@ -589,24 +485,34 @@ void UARSConfigWidget::SendSettings()
 			RCO->Server_SetSettings(mWorking);
 		}
 	}
+	UpdatePresetHeader();
 }
+
+//FRAME
 
 void UARSConfigWidget::RequestClose()
 {
 	CloseSelf();
 }
 
-void UARSConfigWidget::SetHoverInfo(const FText& Name, const FText& Description)
+void UARSConfigWidget::SetHoverInfo(const FText& Name, const FText& Description, const UObject* Source)
 {
+	mHoverSource = Source;
 	if (HoverTitleText) { HoverTitleText->SetText(Name); }
 	if (HoverDescriptionText) { HoverDescriptionText->SetText(Description); }
 }
 
-void UARSConfigWidget::ClearHoverInfo()
+void UARSConfigWidget::ClearHoverInfo(const UObject* Source)
 {
+	if (mHoverSource.Get() != Source)
+	{
+		return;
+	}
+	mHoverSource = nullptr;
 	if (HoverTitleText) { HoverTitleText->SetText(mDefaultHoverTitle); }
 	if (HoverDescriptionText) { HoverDescriptionText->SetText(mDefaultHoverDescription); }
 }
+
 
 void UARSConfigWidget::CloseSelf()
 {
@@ -653,73 +559,29 @@ void UARSConfigWidget::OnCloseClicked()
 	CloseSelf();
 }
 
-void UARSConfigWidget::OnUnderBlueprintChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+//SETTINGS
+
+void UARSConfigWidget::OnTrackLayoutSelected(int32 Index)
 {
-	if (bSuppressEvents || SelectionType == ESelectInfo::Direct)
+	if (bSuppressEvents) { return; }
+	mWorking.bDoubleRails = (Index == 1);
+	UpdateConditionalVisibility();
+	for (UARSPillarSlotWidget* Card : mSlotWidgets)
 	{
-		return;
+		if (Card)
+		{
+			Card->SetDoubleRailsControlsVisible(mWorking.bDoubleRails);
+		}
 	}
-	mWorking.UnderRailBlueprintName = (SelectedItem == TEXT("None")) ? FString() : SelectedItem;
-	bAutoLengthOnSize = !mWorking.UnderRailBlueprintName.IsEmpty();
-	UpdateBlueprintDimsText();
-	UpdateLengthWarning();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::OnUnderLengthCommitted(float Value)
+void UARSConfigWidget::OnTrackSeparationCommitted(float Value)
 {
 	if (bSuppressEvents) { return; }
-	mWorking.UnderRailLength = Value * 100.0f;
-	UpdateLengthWarning();
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderYawCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailRotationOffset.Yaw = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderPitchCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailRotationOffset.Pitch = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderRollCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailRotationOffset.Roll = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderVOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailZOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderHOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailSideOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderFOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailForwardOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderCoverGapChanged(bool bIsChecked)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.bCoverEndGap = bIsChecked;
+	mWorking.TrackSeparation = Value * 100.0f;
+	UpdateConditionalVisibility();
 	SendSettings();
 }
 
@@ -730,363 +592,476 @@ void UARSConfigWidget::OnCombineBlueprintChanged(bool bIsChecked)
 	SendSettings();
 }
 
-//DOUBLE RAILS
-namespace
-{
-	const TArray<FString>& SideModeOptions()
-	{
-		static const TArray<FString> Options = {
-			TEXT("Centered"),
-			TEXT("Both sides, mirrored"),
-			TEXT("Both sides, same facing"),
-			TEXT("Left side only"),
-			TEXT("Right side only")
-		};
-		return Options;
-	}
-}
-
-void UARSConfigWidget::FillSideModeOptions(UComboBoxString* Combo)
-{
-	if (!Combo)
-	{
-		return;
-	}
-	Combo->ClearOptions();
-	for (const FString& Option : SideModeOptions())
-	{
-		Combo->AddOption(Option);
-	}
-}
-
-FString UARSConfigWidget::SideModeToOption(EARSSideMode Mode)
-{
-	const int32 Index = static_cast<int32>(Mode);
-	return SideModeOptions().IsValidIndex(Index) ? SideModeOptions()[Index] : SideModeOptions()[0];
-}
-
-EARSSideMode UARSConfigWidget::OptionToSideMode(const FString& Option)
-{
-	const int32 Index = SideModeOptions().IndexOfByKey(Option);
-	return Index == INDEX_NONE ? EARSSideMode::Center : static_cast<EARSSideMode>(Index);
-}
-
-void UARSConfigWidget::OnDoubleRailsChanged(bool bIsChecked)
+void UARSConfigWidget::OnUnderRailSideModeChanged(EARSSideMode SideMode)
 {
 	if (bSuppressEvents) { return; }
-	mWorking.bDoubleRails = bIsChecked;
+	mWorking.UnderRailSideMode = SideMode;
+	if (PartnerUnderRailPanel)
+	{
+		PartnerUnderRailPanel->PushSide(mWorking.GetUnderRailSide(/*bPartner*/ true));
+	}
+	UpdateConditionalVisibility();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::OnTrackSeparationCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.TrackSeparation = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderSideModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (bSuppressEvents || SelectionType == ESelectInfo::Direct) { return; }
-	mWorking.UnderRailSideMode = OptionToSideMode(SelectedItem);
-	SendSettings();
-}
-
-void UARSConfigWidget::OnUnderAutoRollChanged(bool bIsChecked)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.bUnderRailAutoRoll = bIsChecked;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnSplitUnderRailSidesChanged(bool bIsChecked)
+void UARSConfigWidget::OnSplitSidesChanged(bool bIsChecked)
 {
 	if (bSuppressEvents) { return; }
 	if (bIsChecked && !mWorking.bSplitUnderRailSides)
 	{
 		mWorking.SeedPartnerFromUnderRail();
+		if (PartnerUnderRailPanel)
+		{
+			PartnerUnderRailPanel->PushSide(mWorking.GetUnderRailSide(/*bPartner*/ true));
+		}
 	}
 	mWorking.bSplitUnderRailSides = bIsChecked;
+	UpdateConditionalVisibility();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::OnPartnerLengthCommitted(float Value)
+void UARSConfigWidget::OnUnderRailSideEdited(bool bPartnerSide)
 {
 	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.Length = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerCoverGapChanged(bool bIsChecked)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.bCoverEndGap = bIsChecked;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerYawCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.RotationOffset.Yaw = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerPitchCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.RotationOffset.Pitch = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerRollCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.RotationOffset.Roll = Value;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerVOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.ZOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerHOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.SideOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::OnPartnerFOffsetCommitted(float Value)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.UnderRailPartner.ForwardOffset = Value * 100.0f;
-	SendSettings();
-}
-
-void UARSConfigWidget::HandlePillarSideModeChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (bSuppressEvents || SelectionType == ESelectInfo::Direct) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarSideModes[SlotIndex] = OptionToSideMode(SelectedItem);
-	SendSettings();
-}
-
-void UARSConfigWidget::HandlePillarAutoRollChanged(int32 SlotIndex, bool bIsChecked)
-{
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarAutoRoll[SlotIndex] = bIsChecked;
-	SendSettings();
-}
-
-void UARSConfigWidget::HandlePillarBlueprintChanged(int32 SlotIndex, const FString& SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (bSuppressEvents || SelectionType == ESelectInfo::Direct)
+	UARSUnderRailPanelWidget* Panel = bPartnerSide ? PartnerUnderRailPanel : MainUnderRailPanel;
+	if (!Panel)
 	{
 		return;
 	}
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarBlueprintNames[SlotIndex] = (SelectedItem == TEXT("None")) ? FString() : SelectedItem;
+	mWorking.SetUnderRailSide(bPartnerSide, Panel->GetSide());
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarEveryCommitted(int32 SlotIndex, float Value)
+void UARSConfigWidget::OnUnderRailBlueprintPicked(bool bPartnerSide, const FString& BlueprintName)
 {
 	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarEveryNs[SlotIndex] = FMath::Clamp(FMath::RoundToInt(Value), 1, 100);
+	UARSUnderRailPanelWidget* Panel = bPartnerSide ? PartnerUnderRailPanel : MainUnderRailPanel;
+	if (!Panel)
+	{
+		return;
+	}
+	mWorking.SetUnderRailSide(bPartnerSide, Panel->GetSide());
+	mAutoLengthBlueprint = BlueprintName;
+	bAutoLengthForPartner = bPartnerSide;
+	if (const FVector* Size = mMeasuredSizes.Find(BlueprintName))
+	{
+		// already measured
+		HandleBlueprintSize(BlueprintName, *Size);
+	}
+	else
+	{
+		RequestBlueprintSize(BlueprintName);
+	}
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarSpacingCommitted(int32 SlotIndex, float Value)
+//PILLAR SLOTS
+
+void UARSConfigWidget::OnSlotEdited(int32 SlotIndex)
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarSpacingOffsets[SlotIndex] = FMath::Clamp(FMath::RoundToInt(Value), 0, 100);
+	if (bSuppressEvents || !mSlotWidgets.IsValidIndex(SlotIndex) || !mWorking.PillarSlots.IsValidIndex(SlotIndex))
+	{
+		return;
+	}
+	mWorking.PillarSlots[SlotIndex] = mSlotWidgets[SlotIndex]->GetSlot();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarAlignChanged(int32 SlotIndex, bool bIsChecked)
+void UARSConfigWidget::OnSlotBlueprintPicked(int32 SlotIndex, const FString& BlueprintName)
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarAlignToRail[SlotIndex] = bIsChecked;
-	SendSettings();
+	RequestBlueprintSize(BlueprintName);
+	OnSlotEdited(SlotIndex);
 }
 
-void UARSConfigWidget::HandlePillarPriorityChanged(int32 SlotIndex, bool bIsChecked)
+void UARSConfigWidget::OnSlotMoveRequested(int32 SlotIndex, int32 Delta)
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarPreventOverlap[SlotIndex] = bIsChecked;
+	if (bSuppressEvents || !mWorking.MovePillarSlot(SlotIndex, Delta))
+	{
+		return;
+	}
+	RebuildPillarList();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarYawCommitted(int32 SlotIndex, float Value)
+void UARSConfigWidget::OnSlotRemoveRequested(int32 SlotIndex)
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
-	Rotation.Yaw = Value;
-	mWorking.SetPillarRotation(SlotIndex, Rotation);
+	if (bSuppressEvents)
+	{
+		return;
+	}
+	mWorking.RemovePillarSlot(SlotIndex);
+	RebuildPillarList();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarPitchCommitted(int32 SlotIndex, float Value)
+void UARSConfigWidget::OnAddPillarClicked()
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
-	Rotation.Pitch = Value;
-	mWorking.SetPillarRotation(SlotIndex, Rotation);
+	if (mWorking.AddPillarSlot(AARSSubsystem::GetMaxPillarSlots(this)) == INDEX_NONE)
+	{
+		return;
+	}
+	RebuildPillarList();
+	UpdateBlueprintInfo();
 	SendSettings();
 }
 
-void UARSConfigWidget::HandlePillarRollCommitted(int32 SlotIndex, float Value)
+//PRESETS
+
+bool UARSConfigWidget::IsWorkingDirty() const
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	FRotator Rotation = mWorking.GetPillarRotation(SlotIndex);
-	Rotation.Roll = Value;
-	mWorking.SetPillarRotation(SlotIndex, Rotation);
-	SendSettings();
+	if (mActivePresetName.IsEmpty())
+	{
+		return false;
+	}
+	FARSSettingsData Baseline = mPresetBaseline;
+	Baseline.bEnabled = mWorking.bEnabled;
+	for (int32 i = 0; i < Baseline.PillarSlots.Num() && i < mWorking.PillarSlots.Num(); i++)
+	{
+		Baseline.PillarSlots[i].bExpanded = mWorking.PillarSlots[i].bExpanded;
+	}
+	return !FARSSettingsData::StaticStruct()->CompareScriptStruct(&Baseline, &mWorking, PPF_None);
 }
 
-void UARSConfigWidget::HandlePillarVOffsetCommitted(int32 SlotIndex, float Value)
+
+void UARSConfigWidget::UpdatePresetHeader()
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarZOffsets[SlotIndex] = Value * 100.0f;
-	SendSettings();
+	const AARSClientManager* Manager = GetClientManager();
+	const int32 Count = Manager ? Manager->GetGlobalConfig().Presets.Num() : 0;
+	if (PresetCountText)
+	{
+		PresetCountText->SetText(FText::Format(PresetCountFormat, FText::AsNumber(Count)));
+	}
+	if (PresetActiveNameText)
+	{
+		const FText ActiveName = mActivePresetName.IsEmpty()
+			? NoPresetLoadedText : FText::FromString(mActivePresetName);
+		if (!ActiveName.EqualTo(PresetActiveNameText->GetText()))
+		{
+			mNameMarqueeTime = 0.0f;
+		}
+		PresetActiveNameText->SetText(ActiveName);
+	}
+	if (PresetDirtyIndicator)
+	{
+		PresetDirtyIndicator->SetVisibility(IsWorkingDirty()
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	UpdateSaveButton();
 }
 
-void UARSConfigWidget::HandlePillarHOffsetCommitted(int32 SlotIndex, float Value)
+void UARSConfigWidget::TickPresetNameMarquee(float DeltaTime)
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarSideOffsets[SlotIndex] = Value * 100.0f;
-	SendSettings();
+	if (!PresetActiveNameText)
+	{
+		return;
+	}
+	const float Window = static_cast<float>(PresetActiveNameText->GetCachedGeometry().GetLocalSize().X);
+	const float Overflow = static_cast<float>(PresetActiveNameText->GetDesiredSize().X) - Window;
+	if (Window <= 0.0f || Overflow <= MarqueeSlack)
+	{
+		mNameMarqueeTime = 0.0f;
+		PresetActiveNameText->SetRenderTranslation(FVector2D::ZeroVector);
+		return;
+	}
+
+	const float Travel = Overflow / MarqueeSpeed;
+	const float Cycle = 2.0f * (MarqueeHoldSeconds + Travel);
+	mNameMarqueeTime = FMath::Fmod(mNameMarqueeTime + DeltaTime, Cycle);
+
+	float Offset = 0.0f;
+	if (mNameMarqueeTime > 2.0f * MarqueeHoldSeconds + Travel)
+	{
+		Offset = Overflow * (1.0f - (mNameMarqueeTime - 2.0f * MarqueeHoldSeconds - Travel) / Travel);
+	}
+	else if (mNameMarqueeTime > MarqueeHoldSeconds + Travel)
+	{
+		Offset = Overflow;
+	}
+	else if (mNameMarqueeTime > MarqueeHoldSeconds)
+	{
+		Offset = Overflow * (mNameMarqueeTime - MarqueeHoldSeconds) / Travel;
+	}
+	PresetActiveNameText->SetRenderTranslation(FVector2D(-Offset, 0.0));
 }
 
-void UARSConfigWidget::HandlePillarFOffsetCommitted(int32 SlotIndex, float Value)
+void UARSConfigWidget::RebuildPresetList()
 {
-	if (bSuppressEvents) { return; }
-	mWorking.EnsureSlotArraySizes();
-	mWorking.PillarForwardOffsets[SlotIndex] = Value * 100.0f;
-	SendSettings();
+	const AARSClientManager* Manager = GetClientManager();
+	if (!PresetListBox || !PresetRowWidgetClass || !Manager)
+	{
+		return;
+	}
+	const TArray<FARSPreset>& Presets = Manager->GetGlobalConfig().Presets;
+
+	while (mPresetRows.Num() > Presets.Num())
+	{
+		if (UARSPresetRowWidget* Row = mPresetRows.Pop())
+		{
+			Row->RemoveFromParent();
+		}
+	}
+	while (mPresetRows.Num() < Presets.Num())
+	{
+		UARSPresetRowWidget* Row = CreateWidget<UARSPresetRowWidget>(this, PresetRowWidgetClass);
+		if (!Row)
+		{
+			break;
+		}
+		Row->OnPresetChosen.AddDynamic(this, &UARSConfigWidget::OnPresetRowChosen);
+		Row->OnPresetRenamed.AddDynamic(this, &UARSConfigWidget::OnPresetRowRenamed);
+		Row->OnPresetDeleteRequested.AddDynamic(this, &UARSConfigWidget::OnPresetRowDeleteRequested);
+		Row->OnPresetRenameStarted.AddDynamic(this, &UARSConfigWidget::OnPresetRowRenameStarted);
+		PresetListBox->AddChild(Row);
+		mPresetRows.Add(Row);
+	}
+
+	const bool bDirty = IsWorkingDirty();
+	for (int32 Index = 0; Index < mPresetRows.Num(); Index++)
+	{
+		if (UARSPresetRowWidget* Row = mPresetRows[Index])
+		{
+			Row->SetPreset(Presets[Index].Name, Index, Presets[Index].Name == mActivePresetName, bDirty);
+		}
+	}
+	UpdatePresetHeader();
 }
 
-void UARSConfigWidget::OnPillarBlueprintChanged0(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarBlueprintChanged(0, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarBlueprintChanged1(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarBlueprintChanged(1, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarBlueprintChanged2(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarBlueprintChanged(2, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarBlueprintChanged3(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarBlueprintChanged(3, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarEveryCommitted0(float Value) { HandlePillarEveryCommitted(0, Value); }
-void UARSConfigWidget::OnPillarEveryCommitted1(float Value) { HandlePillarEveryCommitted(1, Value); }
-void UARSConfigWidget::OnPillarEveryCommitted2(float Value) { HandlePillarEveryCommitted(2, Value); }
-void UARSConfigWidget::OnPillarEveryCommitted3(float Value) { HandlePillarEveryCommitted(3, Value); }
-void UARSConfigWidget::OnPillarSpacingCommitted0(float Value) { HandlePillarSpacingCommitted(0, Value); }
-void UARSConfigWidget::OnPillarSpacingCommitted1(float Value) { HandlePillarSpacingCommitted(1, Value); }
-void UARSConfigWidget::OnPillarSpacingCommitted2(float Value) { HandlePillarSpacingCommitted(2, Value); }
-void UARSConfigWidget::OnPillarSpacingCommitted3(float Value) { HandlePillarSpacingCommitted(3, Value); }
-void UARSConfigWidget::OnPillarAlignChanged0(bool bIsChecked) { HandlePillarAlignChanged(0, bIsChecked); }
-void UARSConfigWidget::OnPillarAlignChanged1(bool bIsChecked) { HandlePillarAlignChanged(1, bIsChecked); }
-void UARSConfigWidget::OnPillarAlignChanged2(bool bIsChecked) { HandlePillarAlignChanged(2, bIsChecked); }
-void UARSConfigWidget::OnPillarAlignChanged3(bool bIsChecked) { HandlePillarAlignChanged(3, bIsChecked); }
-void UARSConfigWidget::OnPillarSideModeChanged0(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(0, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarSideModeChanged1(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(1, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarSideModeChanged2(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(2, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarSideModeChanged3(FString SelectedItem, ESelectInfo::Type SelectionType) { HandlePillarSideModeChanged(3, SelectedItem, SelectionType); }
-void UARSConfigWidget::OnPillarAutoRollChanged0(bool bIsChecked) { HandlePillarAutoRollChanged(0, bIsChecked); }
-void UARSConfigWidget::OnPillarAutoRollChanged1(bool bIsChecked) { HandlePillarAutoRollChanged(1, bIsChecked); }
-void UARSConfigWidget::OnPillarAutoRollChanged2(bool bIsChecked) { HandlePillarAutoRollChanged(2, bIsChecked); }
-void UARSConfigWidget::OnPillarAutoRollChanged3(bool bIsChecked) { HandlePillarAutoRollChanged(3, bIsChecked); }
-void UARSConfigWidget::OnPillarPriorityChanged0(bool bIsChecked) { HandlePillarPriorityChanged(0, bIsChecked); }
-void UARSConfigWidget::OnPillarPriorityChanged1(bool bIsChecked) { HandlePillarPriorityChanged(1, bIsChecked); }
-void UARSConfigWidget::OnPillarPriorityChanged2(bool bIsChecked) { HandlePillarPriorityChanged(2, bIsChecked); }
-void UARSConfigWidget::OnPillarPriorityChanged3(bool bIsChecked) { HandlePillarPriorityChanged(3, bIsChecked); }
-void UARSConfigWidget::OnPillarYawCommitted0(float Value) { HandlePillarYawCommitted(0, Value); }
-void UARSConfigWidget::OnPillarYawCommitted1(float Value) { HandlePillarYawCommitted(1, Value); }
-void UARSConfigWidget::OnPillarYawCommitted2(float Value) { HandlePillarYawCommitted(2, Value); }
-void UARSConfigWidget::OnPillarYawCommitted3(float Value) { HandlePillarYawCommitted(3, Value); }
-void UARSConfigWidget::OnPillarPitchCommitted0(float Value) { HandlePillarPitchCommitted(0, Value); }
-void UARSConfigWidget::OnPillarPitchCommitted1(float Value) { HandlePillarPitchCommitted(1, Value); }
-void UARSConfigWidget::OnPillarPitchCommitted2(float Value) { HandlePillarPitchCommitted(2, Value); }
-void UARSConfigWidget::OnPillarPitchCommitted3(float Value) { HandlePillarPitchCommitted(3, Value); }
-void UARSConfigWidget::OnPillarRollCommitted0(float Value) { HandlePillarRollCommitted(0, Value); }
-void UARSConfigWidget::OnPillarRollCommitted1(float Value) { HandlePillarRollCommitted(1, Value); }
-void UARSConfigWidget::OnPillarRollCommitted2(float Value) { HandlePillarRollCommitted(2, Value); }
-void UARSConfigWidget::OnPillarRollCommitted3(float Value) { HandlePillarRollCommitted(3, Value); }
-void UARSConfigWidget::OnPillarVOffsetCommitted0(float Value) { HandlePillarVOffsetCommitted(0, Value); }
-void UARSConfigWidget::OnPillarVOffsetCommitted1(float Value) { HandlePillarVOffsetCommitted(1, Value); }
-void UARSConfigWidget::OnPillarVOffsetCommitted2(float Value) { HandlePillarVOffsetCommitted(2, Value); }
-void UARSConfigWidget::OnPillarVOffsetCommitted3(float Value) { HandlePillarVOffsetCommitted(3, Value); }
-void UARSConfigWidget::OnPillarHOffsetCommitted0(float Value) { HandlePillarHOffsetCommitted(0, Value); }
-void UARSConfigWidget::OnPillarHOffsetCommitted1(float Value) { HandlePillarHOffsetCommitted(1, Value); }
-void UARSConfigWidget::OnPillarHOffsetCommitted2(float Value) { HandlePillarHOffsetCommitted(2, Value); }
-void UARSConfigWidget::OnPillarHOffsetCommitted3(float Value) { HandlePillarHOffsetCommitted(3, Value); }
-void UARSConfigWidget::OnPillarFOffsetCommitted0(float Value) { HandlePillarFOffsetCommitted(0, Value); }
-void UARSConfigWidget::OnPillarFOffsetCommitted1(float Value) { HandlePillarFOffsetCommitted(1, Value); }
-void UARSConfigWidget::OnPillarFOffsetCommitted2(float Value) { HandlePillarFOffsetCommitted(2, Value); }
-void UARSConfigWidget::OnPillarFOffsetCommitted3(float Value) { HandlePillarFOffsetCommitted(3, Value); }
+void UARSConfigWidget::SetPresetMenuOpen(bool bOpen)
+{
+	if (PresetDropdownPanel)
+	{
+		PresetDropdownPanel->SetVisibility(bOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (PresetClickCatcher)
+	{
+		PresetClickCatcher->SetVisibility(bOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (PresetExpandedChevron)
+	{
+		PresetExpandedChevron->SetVisibility(bOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (PresetCollapsedChevron)
+	{
+		PresetCollapsedChevron->SetVisibility(bOpen ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	if (!bOpen)
+	{
+		CloseConfirmation();
+		for (UARSPresetRowWidget* Row : mPresetRows)
+		{
+			if (Row) { Row->EndRename(); }
+		}
+	}
+}
 
-void UARSConfigWidget::OnSavePresetClicked()
+void UARSConfigWidget::AskConfirmation(EARSPresetConfirm Action, const FString& PresetName, const FText& Question)
+{
+	mConfirmAction = Action;
+	mConfirmPresetName = PresetName;
+	if (PresetConfirmText) { PresetConfirmText->SetText(Question); }
+	if (PresetConfirmPanel) { PresetConfirmPanel->SetVisibility(ESlateVisibility::Visible); }
+	if (PresetConfirmFlash) { PlayAnimation(PresetConfirmFlash); }
+}
+
+void UARSConfigWidget::CloseConfirmation()
+{
+	mConfirmAction = EARSPresetConfirm::None;
+	mConfirmPresetName.Reset();
+	if (PresetConfirmPanel) { PresetConfirmPanel->SetVisibility(ESlateVisibility::Collapsed); }
+}
+
+void UARSConfigWidget::LoadPreset(const FString& PresetName)
+{
+	AARSClientManager* Manager = GetClientManager();
+	const FARSPreset* Preset = Manager ? Manager->FindPreset(PresetName) : nullptr;
+	if (!Preset)
+	{
+		return;
+	}
+	const bool bKeepEnabled = mWorking.bEnabled;
+	mWorking = Preset->Settings;
+	mWorking.Normalize();
+	mWorking.bEnabled = bKeepEnabled;
+	for (FARSPillarSlotData& PillarSlot : mWorking.PillarSlots)
+	{
+		PillarSlot.bExpanded = false;
+	}
+	mActivePresetName = Preset->Name;
+	mPresetBaseline = mWorking;
+	SendSettings();
+	PushWorkingToControls();
+	RebuildPresetList();
+}
+
+//PRESET INPUT
+
+void UARSConfigWidget::OnPresetHeaderClicked()
+{
+	const bool bOpen = !PresetDropdownPanel || PresetDropdownPanel->GetVisibility() == ESlateVisibility::Collapsed;
+	if (bOpen)
+	{
+		RebuildPresetList();
+	}
+	SetPresetMenuOpen(bOpen);
+}
+
+void UARSConfigWidget::OnPresetClickCatcherClicked()
+{
+	SetPresetMenuOpen(false);
+}
+
+void UARSConfigWidget::OnPresetRowChosen(const FString& PresetName)
+{
+	if (PresetName == mActivePresetName)
+	{
+		return;
+	}
+	if (IsWorkingDirty())
+	{
+		AskConfirmation(EARSPresetConfirm::LoadOverUnsaved, PresetName, UnsavedChangesQuestion);
+		return;
+	}
+	LoadPreset(PresetName);
+}
+
+void UARSConfigWidget::OnPresetRowRenamed(const FString& OldName, const FString& NewName)
+{
+	AARSClientManager* Manager = GetClientManager();
+	if (!Manager || !Manager->RenamePreset(OldName, NewName))
+	{
+		RebuildPresetList();
+		return;
+	}
+	if (mActivePresetName == OldName)
+	{
+		mActivePresetName = NewName;
+	}
+	RebuildPresetList();
+}
+
+void UARSConfigWidget::OnPresetRowDeleteRequested(const FString& PresetName)
+{
+	AskConfirmation(EARSPresetConfirm::Delete, PresetName,
+		FText::Format(DeletePresetQuestion, FText::FromString(PresetName)));
+}
+
+void UARSConfigWidget::OnPresetRowRenameStarted(const FString& PresetName)
+{
+	for (UARSPresetRowWidget* Row : mPresetRows)
+	{
+		if (Row && Row->GetPresetName() != PresetName)
+		{
+			Row->EndRename();
+		}
+	}
+}
+
+void UARSConfigWidget::OnPresetSaveClicked()
 {
 	AARSClientManager* Manager = GetClientManager();
 	if (!Manager)
 	{
 		return;
 	}
-	FString Name = PresetNameBox ? PresetNameBox->GetText().ToString().TrimStartAndEnd() : FString();
-	if (Name.IsEmpty() && PresetCombo)
-	{
-		Name = PresetCombo->GetSelectedOption();
-	}
+	const FString Typed = PresetNameBox ? PresetNameBox->GetText().ToString().TrimStartAndEnd() : FString();
+	const FString Name = Typed.IsEmpty() ? mActivePresetName : Typed;
 	if (Name.IsEmpty())
 	{
 		return;
 	}
-	Manager->SavePreset(Name, mWorking);
-	RefreshPresetOptions();
-	if (PresetCombo)
+	if (Name != mActivePresetName && Manager->FindPreset(Name))
 	{
-		PresetCombo->SetSelectedOption(Name);
+		AskConfirmation(EARSPresetConfirm::Overwrite, Name,
+			FText::Format(OverwritePresetQuestion, FText::FromString(Name)));
+		return;
 	}
-	if (PresetNameBox)
+	SavePresetAs(Name);
+}
+
+void UARSConfigWidget::OnPresetNameTextChanged(const FText& Text)
+{
+	UpdateSaveButton();
+}
+
+void UARSConfigWidget::UpdateSaveButton()
+{
+	const FString Typed = PresetNameBox ? PresetNameBox->GetText().ToString().TrimStartAndEnd() : FString();
+	const bool bSavingNew = !Typed.IsEmpty();
+	if (PresetSaveButtonText)
 	{
-		PresetNameBox->SetText(FText::GetEmpty());
+		PresetSaveButtonText->SetText(bSavingNew ? SaveNewPresetLabel : SavePresetLabel);
+	}
+	if (PresetSaveButton)
+	{
+		PresetSaveButton->SetIsEnabled(bSavingNew || !mActivePresetName.IsEmpty());
 	}
 }
 
-void UARSConfigWidget::OnApplyPresetClicked()
+void UARSConfigWidget::SavePresetAs(const FString& PresetName)
 {
 	AARSClientManager* Manager = GetClientManager();
-	if (!Manager || !PresetCombo)
+	if (!Manager || PresetName.IsEmpty())
 	{
 		return;
 	}
-	if (const FARSPreset* Preset = Manager->FindPreset(PresetCombo->GetSelectedOption()))
+	Manager->SavePreset(PresetName, mWorking);
+	mActivePresetName = PresetName;
+	mPresetBaseline = mWorking;
+	if (PresetNameBox) { PresetNameBox->SetText(FText::GetEmpty()); }
+	RebuildPresetList();
+}
+
+void UARSConfigWidget::OnPresetResetClicked()
+{
+	const bool bKeepEnabled = mWorking.bEnabled;
+	mWorking = FARSSettingsData();
+	mWorking.Normalize();
+	mWorking.bEnabled = bKeepEnabled;
+	mActivePresetName.Reset();
+	mPresetBaseline = mWorking;
+	SendSettings();
+	PushWorkingToControls();
+	RebuildPresetList();
+}
+
+void UARSConfigWidget::OnPresetConfirmClicked()
+{
+	const EARSPresetConfirm Action = mConfirmAction;
+	const FString Name = mConfirmPresetName;
+	CloseConfirmation();
+
+	switch (Action)
 	{
-		const bool bKeepEnabled = mWorking.bEnabled;
-		mWorking = Preset->Settings;
-		mWorking.EnsureSlotArraySizes();
-		mWorking.bEnabled = bKeepEnabled;
-		SendSettings();
-		PushWorkingToControls();
+	case EARSPresetConfirm::LoadOverUnsaved:
+		LoadPreset(Name);
+		break;
+	case EARSPresetConfirm::Delete:
+		if (AARSClientManager* Manager = GetClientManager())
+		{
+			Manager->DeletePreset(Name);
+		}
+		if (mActivePresetName == Name)
+		{
+			mActivePresetName.Reset();
+		}
+		RebuildPresetList();
+		break;
+	case EARSPresetConfirm::Overwrite:
+		SavePresetAs(Name);
+		break;
+	default:
+		break;
 	}
 }
 
-void UARSConfigWidget::OnDeletePresetClicked()
+void UARSConfigWidget::OnPresetCancelClicked()
 {
-	AARSClientManager* Manager = GetClientManager();
-	if (!Manager || !PresetCombo)
-	{
-		return;
-	}
-	if (Manager->DeletePreset(PresetCombo->GetSelectedOption()))
-	{
-		RefreshPresetOptions();
-	}
+	CloseConfirmation();
 }
