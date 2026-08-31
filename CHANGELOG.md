@@ -2,21 +2,32 @@
 
 All notable changes to Auto Rail Supports are documented here.
 
-## Unreleased
+## [1.1.0]
 
 ### Added
 
 - **Double Rails Mode**
   - Track Separation sets the distance between the tracks. Negative puts the second track on your left, positive on your right.
   - Per-slot placement - Centered, Both sides mirrored, Both sides same facing, Left side only, Right side only.
-  - Pillar auto roll, tilts when the two rails sit at different heights through a curve.
-  - Each track's under-rail segments are tiled along that track's own length. Pillar spacing still counts on the rail you're building.
-  - Split Under-Rail sides, gives the second track its own adjustments. In ARS Adjustments the side you're closest to is the one you edit, matching where the gizmo already sits.
+  - Pillar auto roll, tilts when the two rails sit at different heights through a inclined curve.
+  - Each tracks under-rail segments are tiled along that tracks own length. Pillar spacing still counts on the main rail.
+  - Split Under-Rail sides, gives the second track its own adjustments.
+
+- **Rebuilt configuration menu**
+  - Support pillars are now a list you add to, default up to 32 (configurable to a max of 100), instead of four fixed slots.
+  - Reorder pillars with the arrows on each row.
+  - Split Under-Rail sides now shows both rails as two panels, each with its own blueprint.
+  - New presets dropdown with more control of each preset.
+
+- **Max Pillar Slots**
+  - A world setting under Mod Savegame Settings. Sets how many pillar slots players can configure in this world, from 1 to 100, defaults to 32.
 
 ### Changed
 
-- Blueprints now anchor by the middle of their own contents rather than the Blueprint Designer
-  origin.
+- Blueprints now anchor by the middle of their own contents rather than the Blueprint Designers origin.
+- Pillar priority is now the order of the list, top wins. Existing configurations are reordered on load to keep placing what they placed before.
+
+[1.1.0]: https://github.com/itsalxx-sudo/AutoRailSupports/releases/tag/v1.1.0
 
 ## [1.0.2]
 
