@@ -2,12 +2,7 @@
 
 #include "ARSConfigWidget.h"
 #include "Components/Border.h"
-
-namespace
-{
-	const FLinearColor ARSRowHover = FLinearColor(FColor(0xE5, 0x93, 0x45));
-	const FLinearColor ARSRowNormal = FLinearColor(1.0f, 1.0f, 1.0f, 0.0f);
-}
+#include "Components/TextBlock.h"
 
 void UARSRowWidget::NativeOnInitialized()
 {
@@ -19,6 +14,28 @@ void UARSRowWidget::NativeOnInitialized()
 		RowBackground->SetBrush(Brush);
 	}
 	SetHighlighted(false);
+	ApplyLabel();
+}
+
+void UARSRowWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	ApplyLabel();
+}
+
+void UARSRowWidget::SetSettingText(const FText& Name, const FText& Description)
+{
+	SettingName = Name;
+	SettingDescription = Description;
+	ApplyLabel();
+}
+
+void UARSRowWidget::ApplyLabel()
+{
+	if (LabelText && !SettingName.IsEmpty())
+	{
+		LabelText->SetText(SettingName);
+	}
 }
 
 void UARSRowWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -27,7 +44,7 @@ void UARSRowWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPoint
 	SetHighlighted(true);
 	if (UARSConfigWidget* ConfigWidget = GetTypedOuter<UARSConfigWidget>())
 	{
-		ConfigWidget->SetHoverInfo(SettingName, SettingDescription);
+		ConfigWidget->SetHoverInfo(SettingName, SettingDescription, this);
 	}
 }
 
@@ -37,7 +54,7 @@ void UARSRowWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 	SetHighlighted(false);
 	if (UARSConfigWidget* ConfigWidget = GetTypedOuter<UARSConfigWidget>())
 	{
-		ConfigWidget->ClearHoverInfo();
+		ConfigWidget->ClearHoverInfo(this);
 	}
 }
 
@@ -45,6 +62,6 @@ void UARSRowWidget::SetHighlighted(bool bHighlighted)
 {
 	if (RowBackground)
 	{
-		RowBackground->SetBrushColor(bHighlighted ? ARSRowHover : ARSRowNormal);
+		RowBackground->SetBrushColor(bHighlighted ? HoverColor : RestColor);
 	}
 }
