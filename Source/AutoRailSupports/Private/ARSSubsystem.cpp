@@ -94,8 +94,14 @@ void AARSSubsystem::BeginPlay()
 
 	if (AFGBlueprintSubsystem* BlueprintSubsystem = AFGBlueprintSubsystem::Get(GetWorld()))
 	{
-		BlueprintSubsystem->OnBlueprintDescriptorUpdated.AddDynamic(this, &AARSSubsystem::OnBlueprintDescriptorUpdated);
-		bDescriptorUpdateBound = true;
+		if (FMulticastDelegateProperty* Prop = CastField<FMulticastDelegateProperty>(
+			BlueprintSubsystem->GetClass()->FindPropertyByName(TEXT("OnBlueprintDescriptorUpdated"))))
+		{
+			FScriptDelegate Delegate;
+			Delegate.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(AARSSubsystem, OnBlueprintDescriptorUpdated));
+			Prop->AddDelegate(MoveTemp(Delegate), BlueprintSubsystem);
+			bDescriptorUpdateBound = true;
+		}
 	}
 }
 
@@ -150,7 +156,13 @@ void AARSSubsystem::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (AFGBlueprintSubsystem* BlueprintSubsystem = AFGBlueprintSubsystem::Get(GetWorld()))
 		{
-			BlueprintSubsystem->OnBlueprintDescriptorUpdated.RemoveDynamic(this, &AARSSubsystem::OnBlueprintDescriptorUpdated);
+			if (FMulticastDelegateProperty* Prop = CastField<FMulticastDelegateProperty>(
+				BlueprintSubsystem->GetClass()->FindPropertyByName(TEXT("OnBlueprintDescriptorUpdated"))))
+			{
+				FScriptDelegate Delegate;
+				Delegate.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(AARSSubsystem, OnBlueprintDescriptorUpdated));
+				Prop->RemoveDelegate(Delegate, BlueprintSubsystem);
+			}
 		}
 		bDescriptorUpdateBound = false;
 	}
