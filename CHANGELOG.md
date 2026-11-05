@@ -2,13 +2,21 @@
 
 All notable changes to Auto Rail Supports are documented here.
 
+## [1.1.1]
+
+### Fixed
+
+ - Fixed crash in new 1.2.5.0 update.
+
+[1.1.1]: https://github.com/itsalxx-sudo/AutoRailSupports/releases/tag/v1.1.1
+
 ## [1.1.0]
 
 ### Added
 
 - **Double Rails Mode**
   - Track Separation sets the distance between the tracks. Negative puts the second track on your left, positive on your right.
-  - Per-slot placement - Centered, Both sides mirrored, Both sides same facing, Left side only, Right side only.
+  - Per-slot placement - Centered, Both tracks mirrored, Both tracks same facing, Left track only, Right track only.
   - Pillar auto roll, tilts when the two rails sit at different heights through a inclined curve.
   - Each tracks under-rail segments are tiled along that tracks own length. Pillar spacing still counts on the main rail.
   - Split Under-Rail sides, gives the second track its own adjustments.
